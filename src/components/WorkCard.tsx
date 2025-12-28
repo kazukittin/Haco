@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { WorkInfo } from '@/vite-env.d'
 import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 import { PlayIcon } from '@/components/ui/icons'
 
 interface WorkCardProps {
@@ -27,9 +28,13 @@ export function WorkCard({ work, onClick }: WorkCardProps) {
             <div className="aspect-[3/4] relative overflow-hidden bg-slate-800">
                 {!imageError && work.thumbnailUrl ? (
                     <>
+                        {/* ローディング中のスケルトン */}
                         {!imageLoaded && (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                            <div className="absolute inset-0">
+                                <Skeleton className="w-full h-full rounded-none" />
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin opacity-50" />
+                                </div>
                             </div>
                         )}
                         <img
@@ -39,12 +44,17 @@ export function WorkCard({ work, onClick }: WorkCardProps) {
                                 }`}
                             onLoad={() => setImageLoaded(true)}
                             onError={() => setImageError(true)}
+                            loading="lazy"
                         />
                     </>
                 ) : (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-purple-900/30 to-slate-900">
-                        <span className="text-4xl font-bold text-white/20">
+                    /* 画像がない、または読み込み失敗時のフォールバック */
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900 p-4 text-center">
+                        <span className="text-4xl font-bold text-white/10 mb-2">
                             {work.title.charAt(0)}
+                        </span>
+                        <span className="text-xs text-slate-600 font-mono border border-slate-700 px-1 rounded">
+                            NO IMAGE
                         </span>
                     </div>
                 )}
@@ -69,7 +79,7 @@ export function WorkCard({ work, onClick }: WorkCardProps) {
             {/* 情報エリア */}
             <div className="p-3 space-y-2">
                 {/* タイトル */}
-                <h3 className="font-medium text-sm text-white line-clamp-2 group-hover:text-purple-300 transition-colors">
+                <h3 className="font-medium text-sm text-white line-clamp-2 group-hover:text-purple-300 transition-colors" title={work.title}>
                     {work.title}
                 </h3>
 

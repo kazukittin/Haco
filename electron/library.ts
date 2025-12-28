@@ -230,12 +230,40 @@ export async function scanAndUpdateLibrary(
                 result.success++
                 result.newWorks.push(rjCode)
             } else {
-                result.failed++
-                result.errors.push(`${rjCode}: 情報を取得できませんでした`)
+                // スクレイピング失敗時のフォールバック
+                libraryData.works[rjCode] = {
+                    rjCode,
+                    title: path.basename(folderPath),
+                    circle: '未取得',
+                    authors: [],
+                    tags: ['未取得'],
+                    description: '情報の取得に失敗しました。',
+                    thumbnailUrl: '',
+                    localPath: folderPath,
+                    fetchedAt: new Date().toISOString(),
+                }
+                result.success++
+                result.newWorks.push(rjCode)
+                result.errors.push(`${rjCode}: 情報を取得できませんでした（仮登録）`)
             }
         } catch (error) {
-            result.failed++
-            result.errors.push(`${rjCode}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+            // エラー発生時のフォールバック
+            console.error(`[Library] Scrape error for ${rjCode}:`, error)
+
+            libraryData.works[rjCode] = {
+                rjCode,
+                title: path.basename(folderPath),
+                circle: 'エラー',
+                authors: [],
+                tags: ['エラー'],
+                description: `エラーが発生しました: ${error instanceof Error ? error.message : String(error)}`,
+                thumbnailUrl: '',
+                localPath: folderPath,
+                fetchedAt: new Date().toISOString(),
+            }
+            result.success++
+            result.newWorks.push(rjCode)
+            result.errors.push(`${rjCode}: エラーにより仮登録しました`)
         }
 
         // レート制限対策のディレイ

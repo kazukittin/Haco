@@ -5,6 +5,7 @@ import { WorkGrid } from './components/WorkGrid'
 import { SettingsPage } from './components/SettingsPage'
 import { WorkDetailModal } from './components/WorkDetailModal'
 import { ViewerModal } from './components/ViewerModal'
+import { ScanStatus } from './components/ScanStatus'
 import { SettingsIcon, RefreshIcon } from './components/ui/icons'
 import { Button } from '@/components/ui/button'
 
@@ -292,6 +293,9 @@ function App() {
                     title={viewerWork.title}
                 />
             )}
+
+            {/* スキャンステータス (グローバル) */}
+            <ScanStatus />
         </div>
     )
 }
