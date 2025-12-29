@@ -4,6 +4,35 @@ import { app, webContents } from 'electron'
 import * as chokidar from 'chokidar'
 import type { LibraryData, WorkInfo, ScanResult, AppSettings } from './types'
 import { scrapeWorkInfo, scrapeByTitleWithFallback } from './scraper'
+import { getViewerData, getImageData } from './viewer'
+
+/**
+ * サムネイルが取得できていない場合、最初の一枚をサムネイルにする
+ */
+function ensureThumbnail(work: WorkInfo): WorkInfo {
+    if (work.thumbnailUrl && (work.thumbnailUrl.startsWith('http') || work.thumbnailUrl.startsWith('data:'))) {
+        return work
+    }
+
+    try {
+        const viewerData = getViewerData(work.localPath)
+        if (viewerData && viewerData.images.length > 0) {
+            const firstImage = viewerData.images[0]
+            const base64 = getImageData(firstImage.sourceType, firstImage.source, viewerData.archivePath)
+            if (base64) {
+                work.thumbnailUrl = base64
+                // ついでにサンプル画像としても追加しておく
+                if (!work.sampleImages || work.sampleImages.length === 0) {
+                    work.sampleImages = [base64]
+                }
+            }
+        }
+    } catch (error) {
+        console.error(`[Library] Error ensuring thumbnail for ${work.rjCode}:`, error)
+    }
+
+    return work
+}
 
 // 監視インスタンスの保持
 let watcher: chokidar.FSWatcher | null = null
@@ -33,6 +62,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     libraryPaths: [],
     autoScan: false,
     requestDelay: 1500, // 1.5秒
+    fuzzyWords: ['ロリ', 'ショタ'],
 }
 
 /**
@@ -108,7 +138,12 @@ export function loadSettings(): AppSettings {
     try {
         if (fs.existsSync(filePath)) {
             const data = fs.readFileSync(filePath, 'utf-8')
-            return { ...DEFAULT_SETTINGS, ...JSON.parse(data) }
+            const settings = { ...DEFAULT_SETTINGS, ...JSON.parse(data) }
+            // fuzzyWordsがない古い設定ファイル対策
+            if (!settings.fuzzyWords) {
+                settings.fuzzyWords = [...DEFAULT_SETTINGS.fuzzyWords!]
+            }
+            return settings
         }
     } catch (error) {
         console.error('[Library] Error loading settings:', error)
@@ -134,6 +169,31 @@ export function saveSettings(settings: AppSettings): boolean {
         return true
     } catch (error) {
         console.error('[Library] Error saving settings:', error)
+        return false
+    }
+}
+
+/**
+ * アプリケーションデータを初期化（保存ファイルを削除）
+ */
+export async function resetAppData(): Promise<boolean> {
+    try {
+        // 監視を停止
+        if (watcher) {
+            await watcher.close()
+            watcher = null
+        }
+
+        const libraryPath = getLibraryFilePath()
+        const settingsPath = getSettingsFilePath()
+
+        if (fs.existsSync(libraryPath)) fs.unlinkSync(libraryPath)
+        if (fs.existsSync(settingsPath)) fs.unlinkSync(settingsPath)
+
+        console.log('[Library] App data reset successfully')
+        return true
+    } catch (error) {
+        console.error('[Library] Error resetting app data:', error)
         return false
     }
 }
@@ -255,7 +315,8 @@ export function scanFolderForWorks(folderPath: string): Array<{ rjCode: string; 
  */
 export async function scanAndUpdateLibrary(
     scanPath: string,
-    onProgress?: (current: number, total: number, rjCode: string, status: string) => void
+    onProgress?: (current: number, total: number, rjCode: string, status: string) => void,
+    onlyDLsite: boolean = false
 ): Promise<ScanResult> {
     if (isScanningGlobal) {
         console.warn('[Library] Scan already in progress, skipping...')
@@ -300,8 +361,19 @@ export async function scanAndUpdateLibrary(
         const existingWorks = foundWorks.filter(w => libraryData.works[w.rjCode])
 
         // 既存作品のパスを更新
-        for (const work of existingWorks) {
-            libraryData.works[work.rjCode].localPath = work.folderPath
+        if (existingWorks.length > 0) {
+            for (const work of existingWorks) {
+                if (libraryData.works[work.rjCode]) {
+                    libraryData.works[work.rjCode].localPath = work.folderPath
+                    // サムネイルがなければローカルから取得試行
+                    libraryData.works[work.rjCode] = ensureThumbnail(libraryData.works[work.rjCode])
+                }
+            }
+            // パス更新を即座に反映
+            saveLibraryData(libraryData)
+            webContents.getAllWebContents().forEach(wc => {
+                wc.send('library:updated')
+            })
         }
 
         console.log(`[Library] New works to scrape: ${newWorks.length}, Existing: ${existingWorks.length}`)
@@ -331,17 +403,18 @@ export async function scanAndUpdateLibrary(
                 }
 
                 try {
-                    // DLsite → Google Books の順で検索
-                    const workInfo = await scrapeByTitleWithFallback(titleFromFile, folderPath, rjCode)
+                    // DLsite → Google Books の順で検索（onlyDLsiteがtrueならDLsiteのみ）
+                    console.log(`[Library] Searching for local work: "${titleFromFile}" (OnlyDLsite: ${onlyDLsite})`)
+                    const workInfo = await scrapeByTitleWithFallback(titleFromFile, folderPath, rjCode, onlyDLsite, settings.fuzzyWords || [])
 
                     if (workInfo) {
-                        libraryData.works[rjCode] = workInfo
+                        libraryData.works[rjCode] = ensureThumbnail(workInfo)
                         result.success++
                         result.newWorks.push(rjCode)
                         console.log(`[Library] Found info for: ${titleFromFile}`)
                     } else {
                         // 見つからなかった場合はフォールバック
-                        libraryData.works[rjCode] = {
+                        libraryData.works[rjCode] = ensureThumbnail({
                             rjCode,
                             title: titleFromFile,
                             circle: 'ローカル作品',
@@ -351,14 +424,14 @@ export async function scanAndUpdateLibrary(
                             thumbnailUrl: '',
                             localPath: folderPath,
                             fetchedAt: new Date().toISOString(),
-                        }
+                        })
                         result.success++
                         result.newWorks.push(rjCode)
                         result.errors.push(`${titleFromFile}: オンラインで情報が見つかりませんでした`)
                     }
                 } catch (error) {
                     console.error(`[Library] Error searching for ${titleFromFile}:`, error)
-                    libraryData.works[rjCode] = {
+                    libraryData.works[rjCode] = ensureThumbnail({
                         rjCode,
                         title: titleFromFile,
                         circle: 'ローカル作品',
@@ -368,10 +441,16 @@ export async function scanAndUpdateLibrary(
                         thumbnailUrl: '',
                         localPath: folderPath,
                         fetchedAt: new Date().toISOString(),
-                    }
+                    })
                     result.success++
                     result.newWorks.push(rjCode)
                 }
+
+                // 1件ごとに保存と通知（リアルタイム更新）
+                saveLibraryData(libraryData)
+                webContents.getAllWebContents().forEach(wc => {
+                    wc.send('library:updated')
+                })
 
                 // レート制限対策のディレイ
                 if (i < newWorks.length - 1) {
@@ -389,12 +468,12 @@ export async function scanAndUpdateLibrary(
                 const workInfo = await scrapeWorkInfo(rjCode, folderPath)
 
                 if (workInfo) {
-                    libraryData.works[rjCode] = workInfo
+                    libraryData.works[rjCode] = ensureThumbnail(workInfo)
                     result.success++
                     result.newWorks.push(rjCode)
                 } else {
                     // スクレイピング失敗時のフォールバック
-                    libraryData.works[rjCode] = {
+                    libraryData.works[rjCode] = ensureThumbnail({
                         rjCode,
                         title: titleFromFile,
                         circle: '未取得',
@@ -404,7 +483,7 @@ export async function scanAndUpdateLibrary(
                         thumbnailUrl: '',
                         localPath: folderPath,
                         fetchedAt: new Date().toISOString(),
-                    }
+                    })
                     result.success++
                     result.newWorks.push(rjCode)
                     result.errors.push(`${rjCode}: 情報を取得できませんでした（仮登録）`)
@@ -413,7 +492,7 @@ export async function scanAndUpdateLibrary(
                 // エラー発生時のフォールバック
                 console.error(`[Library] Scrape error for ${rjCode}:`, error)
 
-                libraryData.works[rjCode] = {
+                libraryData.works[rjCode] = ensureThumbnail({
                     rjCode,
                     title: titleFromFile,
                     circle: 'エラー',
@@ -423,7 +502,7 @@ export async function scanAndUpdateLibrary(
                     thumbnailUrl: '',
                     localPath: folderPath,
                     fetchedAt: new Date().toISOString(),
-                }
+                })
                 result.success++
                 result.newWorks.push(rjCode)
                 result.errors.push(`${rjCode}: エラーにより仮登録しました`)
@@ -443,6 +522,15 @@ export async function scanAndUpdateLibrary(
 
         // ライブラリデータを保存
         saveLibraryData(libraryData)
+
+        // 存在しない作品をクリーンアップ
+        const cleanupResult = cleanupMissingWorks()
+        if (cleanupResult.removed.length > 0) {
+            console.log(`[Library] Cleaned up ${cleanupResult.removed.length} missing works during scan`)
+            webContents.getAllWebContents().forEach(wc => {
+                wc.send('library:updated')
+            })
+        }
 
         return result
     } catch (error) {
@@ -692,12 +780,15 @@ export function setupFolderWatcher(): void {
     console.log(`[Watcher] Starting watcher for ${paths.length} paths...`)
 
     // 新しい監視を開始
-    watcher = chokidar.watch(paths, {
+    const watchPaths = paths.map(p => typeof p === 'string' ? p : p.path)
+    console.log(`[Watcher] Watching paths:`, watchPaths)
+
+    watcher = chokidar.watch(watchPaths, {
         persistent: true,
         ignoreInitial: true,
-        depth: 1, // トップレベルの変更のみ監視
+        depth: 3, // 少し深めまで監視（サークル別フォルダなどに対応）
         awaitWriteFinish: {
-            stabilityThreshold: 2000,
+            stabilityThreshold: 1000,
             pollInterval: 100
         }
     })
@@ -712,18 +803,21 @@ export function setupFolderWatcher(): void {
 
                 // 各パスをスキャン
                 for (const p of currentSettings.libraryPaths) {
-                    await scanAndUpdateLibrary(p)
+                    const scanPath = typeof p === 'string' ? p : p.path
+                    const onlyDLsite = typeof p === 'string' ? false : p.onlyDLsite
+                    await scanAndUpdateLibrary(scanPath, undefined, onlyDLsite)
                 }
 
-                // 存在しないファイルをクリーンアップ
-                cleanupMissingWorks()
+                // 存在しないファイルをクリーンアップは scanAndUpdateLibrary 内で行われるようになったが
+                // 念のためここでも最終チェック
+                const cleanupResult = cleanupMissingWorks()
 
                 // フロントエンドに通知
                 const windows = webContents.getAllWebContents()
                 windows.forEach(wc => {
                     wc.send('library:updated', { source: 'watcher' })
                 })
-                console.log('[Watcher] Auto-scan completed.')
+                console.log(`[Watcher] Auto-scan completed. Cleaned up: ${cleanupResult.removed.length}`)
             } catch (err) {
                 console.error('[Watcher] Auto-scan failed:', err)
             }

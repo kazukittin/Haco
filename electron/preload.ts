@@ -32,8 +32,8 @@ const electronAPI = {
     },
 
     /** ライブラリをスキャン */
-    scanLibrary: (scanPath: string) => {
-        return ipcRenderer.invoke('library:scan', scanPath)
+    scanLibrary: (scanPath: string, onlyDLsite: boolean = false) => {
+        return ipcRenderer.invoke('library:scan', scanPath, onlyDLsite)
     },
 
     /** 作品を検索 */
@@ -136,6 +136,16 @@ const electronAPI = {
     /** 設定を保存 */
     saveSettings: (settings: unknown) => {
         return ipcRenderer.invoke('settings:save', settings)
+    },
+
+    /** アプリデータをリセット */
+    resetApp: () => {
+        return ipcRenderer.invoke('system:reset')
+    },
+
+    /** アプリを再起動 */
+    relaunch: () => {
+        return ipcRenderer.invoke('system:relaunch')
     },
 
     // ========================================

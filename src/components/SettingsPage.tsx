@@ -5,7 +5,9 @@ import {
     RefreshIcon,
     XIcon,
     SettingsIcon,
-    ChevronLeftIcon
+    ChevronLeftIcon,
+    TrashIcon,
+    TagIcon
 } from '@/components/ui/icons'
 import type { AppSettings, ScanProgress, ScanResult } from '@/vite-env.d'
 
@@ -20,6 +22,7 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
     const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null)
     const [scanResult, setScanResult] = useState<ScanResult | null>(null)
     const [currentScanPath, setCurrentScanPath] = useState<string>('')
+    const [fuzzyInput, setFuzzyInput] = useState('')
 
     // 設定とスキャン状態を読み込む
     useEffect(() => {
@@ -42,16 +45,17 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
     }, [])
 
     // フォルダを追加
-    const handleAddFolder = async () => {
+    const handleAddFolder = async (onlyDLsite: boolean = false) => {
         if (isScanning || !settings) return
 
         const path = await window.electronAPI.selectFolder()
         if (path) {
             // 重複チェック
-            if (!settings.libraryPaths.includes(path)) {
+            const exists = settings.libraryPaths.some(p => (typeof p === 'string' ? p : p.path) === path)
+            if (!exists) {
                 const newSettings = {
                     ...settings,
-                    libraryPaths: [...settings.libraryPaths, path]
+                    libraryPaths: [...settings.libraryPaths, { path, onlyDLsite }]
                 }
                 await window.electronAPI.saveSettings(newSettings)
                 setSettings(newSettings)
@@ -61,7 +65,7 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
                 setScanResult(null)
                 setCurrentScanPath(path)
                 try {
-                    const result = await window.electronAPI.scanLibrary(path)
+                    const result = await window.electronAPI.scanLibrary(path, onlyDLsite)
                     setScanResult(result)
                     onScanComplete()
                 } catch (error) {
@@ -80,7 +84,7 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
 
         const newSettings = {
             ...settings,
-            libraryPaths: settings.libraryPaths.filter(p => p !== pathToRemove)
+            libraryPaths: settings.libraryPaths.filter(p => (typeof p === 'string' ? p : p.path) !== pathToRemove)
         }
         await window.electronAPI.saveSettings(newSettings)
         setSettings(newSettings)
@@ -102,9 +106,12 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
         }
 
         try {
-            for (const path of settings.libraryPaths) {
+            for (const p of settings.libraryPaths) {
+                const path = typeof p === 'string' ? p : p.path
+                const onlyDLsite = typeof p === 'string' ? false : p.onlyDLsite
+
                 setCurrentScanPath(path)
-                const result = await window.electronAPI.scanLibrary(path)
+                const result = await window.electronAPI.scanLibrary(path, onlyDLsite)
 
                 // 結果をマージ
                 combinedResult.success += result.success
@@ -124,6 +131,48 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
         }
     }
 
+    // アプリデータをリセット
+    const handleResetApp = async () => {
+        const confirmed = window.confirm('すべての設定、ライブラリデータ、キャッシュを完全に削除しますか？\nこの操作は取り消せません。実行後、アプリは自動的に再起動します。')
+
+        if (confirmed) {
+            try {
+                await window.electronAPI.resetApp()
+                await window.electronAPI.relaunch()
+            } catch (error) {
+                console.error('Reset error:', error)
+                alert('リセット中にエラーが発生しました。')
+            }
+        }
+    }
+
+    // 伏字キーワードを追加
+    const handleAddFuzzyWord = async () => {
+        if (!settings || !fuzzyInput.trim() || isScanning) return
+        if (settings.fuzzyWords?.includes(fuzzyInput.trim())) {
+            setFuzzyInput('')
+            return
+        }
+        const newSettings = {
+            ...settings,
+            fuzzyWords: [...(settings.fuzzyWords || []), fuzzyInput.trim()]
+        }
+        await window.electronAPI.saveSettings(newSettings)
+        setSettings(newSettings)
+        setFuzzyInput('')
+    }
+
+    // 伏字キーワードを削除
+    const handleRemoveFuzzyWord = async (word: string) => {
+        if (!settings || isScanning) return
+        const newSettings = {
+            ...settings,
+            fuzzyWords: (settings.fuzzyWords || []).filter(w => w !== word)
+        }
+        await window.electronAPI.saveSettings(newSettings)
+        setSettings(newSettings)
+    }
+
     if (!settings) {
         return (
             <div className="flex-1 flex items-center justify-center text-slate-400">
@@ -134,7 +183,7 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
     }
 
     return (
-        <div className="flex-1 flex flex-col bg-slate-950 text-white overflow-hidden">
+        <div className="h-screen flex flex-col bg-slate-950 text-white overflow-hidden">
             {/* ヘッダー */}
             <div className="h-14 flex items-center px-6 border-b border-white/5 bg-slate-900/30">
                 <Button
@@ -165,17 +214,28 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
                         </div>
 
                         <div className="bg-slate-900/50 border border-white/10 rounded-xl overflow-hidden">
-                            <div className="p-4 border-b border-white/5 flex justify-between items-center bg-white/5">
+                            <div className="p-4 border-b border-white/5 flex flex-wrap gap-2 justify-between items-center bg-white/5">
                                 <h3 className="font-medium text-slate-200">監視フォルダ</h3>
-                                <Button
-                                    size="sm"
-                                    onClick={handleAddFolder}
-                                    disabled={isScanning}
-                                    className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    <FolderIcon className="w-4 h-4 mr-2" />
-                                    フォルダを追加
-                                </Button>
+                                <div className="flex gap-2">
+                                    <Button
+                                        size="sm"
+                                        onClick={() => handleAddFolder(true)}
+                                        disabled={isScanning}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+                                    >
+                                        <FolderIcon className="w-3.5 h-3.5 mr-1.5" />
+                                        DLsiteフォルダを追加
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        onClick={() => handleAddFolder(false)}
+                                        disabled={isScanning}
+                                        className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+                                    >
+                                        <FolderIcon className="w-3.5 h-3.5 mr-1.5" />
+                                        フォルダを追加
+                                    </Button>
+                                </div>
                             </div>
 
                             {settings.libraryPaths.length === 0 ? (
@@ -185,25 +245,32 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
                                 </div>
                             ) : (
                                 <div className="divide-y divide-white/5">
-                                    {settings.libraryPaths.map((path) => (
-                                        <div key={path} className="p-4 flex items-center justify-between hover:bg-white/5 transition-colors">
-                                            <div className="flex items-center gap-3 overflow-hidden">
-                                                <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0">
-                                                    <FolderIcon className="w-4 h-4 text-slate-400" />
+                                    {settings.libraryPaths.map((p) => {
+                                        const pathStr = typeof p === 'string' ? p : p.path
+                                        const onlyDLsite = typeof p === 'string' ? false : p.onlyDLsite
+                                        return (
+                                            <div key={pathStr} className="p-4 flex items-center justify-between hover:bg-white/5 transition-colors">
+                                                <div className="flex items-center gap-3 overflow-hidden">
+                                                    <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0">
+                                                        <FolderIcon className={`w-4 h-4 ${onlyDLsite ? 'text-blue-400' : 'text-slate-400'}`} />
+                                                    </div>
+                                                    <div className="flex flex-col overflow-hidden">
+                                                        <span className="font-mono text-sm truncate text-slate-300">{pathStr}</span>
+                                                        {onlyDLsite && <span className="text-[10px] text-blue-400 font-bold tracking-wider">DLsite ONLY</span>}
+                                                    </div>
                                                 </div>
-                                                <span className="font-mono text-sm truncate text-slate-300">{path}</span>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleRemoveFolder(pathStr)}
+                                                    disabled={isScanning}
+                                                    className="text-slate-500 hover:text-red-400 hover:bg-red-400/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                                                >
+                                                    <XIcon className="w-4 h-4" />
+                                                </Button>
                                             </div>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => handleRemoveFolder(path)}
-                                                disabled={isScanning}
-                                                className="text-slate-500 hover:text-red-400 hover:bg-red-400/10 disabled:opacity-30 disabled:cursor-not-allowed"
-                                            >
-                                                <XIcon className="w-4 h-4" />
-                                            </Button>
-                                        </div>
-                                    ))}
+                                        )
+                                    })}
                                 </div>
                             )}
                         </div>
@@ -328,7 +395,84 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
                         </div>
                     </section>
 
-                    {/* 一般設定（プレースホルダー） */}
+                    {/* 伏字検索キーワード設定セクション */}
+                    <section className="space-y-4 pt-4 border-t border-white/5">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h2 className="text-xl font-bold mb-1 font-outfit tracking-tight">伏字検索キーワード</h2>
+                                <p className="text-sm text-slate-400">
+                                    フォルダ名にこれらのワードが含まれる場合、伏せ字（〇や×）を考慮して柔軟に検索します。
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className={`bg-slate-900/50 border border-white/10 rounded-xl p-6 space-y-4 shadow-xl transition-opacity ${isScanning ? 'opacity-50 pointer-events-none' : ''}`}>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={fuzzyInput}
+                                    onChange={(e) => setFuzzyInput(e.target.value)}
+                                    placeholder="例: ロリ、ショタ、淫乱"
+                                    className="flex-1 bg-slate-800 border border-white/10 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500/30 transition-all placeholder:text-slate-600"
+                                    onKeyDown={(e) => e.key === 'Enter' && handleAddFuzzyWord()}
+                                />
+                                <Button
+                                    onClick={handleAddFuzzyWord}
+                                    className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 px-6"
+                                >
+                                    追加
+                                </Button>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                                {settings.fuzzyWords?.map(word => (
+                                    <div
+                                        key={word}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/10 border border-purple-500/30 rounded-full text-sm text-purple-300 group hover:border-purple-500/60 transition-colors"
+                                    >
+                                        <TagIcon className="w-3 h-3 text-purple-400" />
+                                        <span>{word}</span>
+                                        <button
+                                            onClick={() => handleRemoveFuzzyWord(word)}
+                                            className="text-slate-500 hover:text-red-400 transition-colors ml-1"
+                                            title="削除"
+                                        >
+                                            <XIcon className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                ))}
+                                {(!settings.fuzzyWords || settings.fuzzyWords.length === 0) && (
+                                    <p className="text-xs text-slate-500 italic">キーワードが登録されていません。</p>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* メンテナンスセクション */}
+                    <section className="space-y-4 pt-4 border-t border-white/5">
+                        <div>
+                            <h2 className="text-xl font-bold mb-1 text-red-500">メンテナンス</h2>
+                            <p className="text-sm text-slate-400">データの初期化やトラブルシューティングを行います。</p>
+                        </div>
+
+                        <div className="bg-red-950/20 border border-red-500/20 rounded-xl p-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h3 className="font-medium text-red-400 mb-1">アプリケーションデータの初期化</h3>
+                                    <p className="text-sm text-slate-400">すべての設定、ライブラリ情報、キャッシュを初期状態に戻します。</p>
+                                </div>
+                                <Button
+                                    variant="ghost"
+                                    onClick={handleResetApp}
+                                    disabled={isScanning}
+                                    className="text-red-400 hover:text-white hover:bg-red-600 shadow-sm disabled:opacity-30"
+                                >
+                                    <TrashIcon className="w-4 h-4 mr-2" />
+                                    データを初期化
+                                </Button>
+                            </div>
+                        </div>
+                    </section>
                 </div>
             </div>
         </div>

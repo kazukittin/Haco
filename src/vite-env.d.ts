@@ -38,10 +38,16 @@ export interface ScanResult {
     errors: string[]
 }
 
+export interface LibraryPathConfig {
+    path: string
+    onlyDLsite: boolean
+}
+
 export interface AppSettings {
-    libraryPaths: string[]
+    libraryPaths: (string | LibraryPathConfig)[]
     autoScan: boolean
     requestDelay: number
+    fuzzyWords?: string[]
 }
 
 export interface ScanProgress {
@@ -90,7 +96,7 @@ interface ElectronAPI {
 
     // ライブラリ操作
     getLibraryData: () => Promise<LibraryData>
-    scanLibrary: (scanPath: string) => Promise<ScanResult>
+    scanLibrary: (scanPath: string, onlyDLsite?: boolean) => Promise<ScanResult>
     searchWorks: (query: string) => Promise<WorkInfo[]>
     filterByTag: (tag: string) => Promise<WorkInfo[]>
     getAllTags: () => Promise<TagCount[]>
@@ -115,6 +121,8 @@ interface ElectronAPI {
     // 設定
     getSettings: () => Promise<AppSettings>
     saveSettings: (settings: AppSettings) => Promise<boolean>
+    resetApp: () => Promise<boolean>
+    relaunch: () => Promise<void>
 
     // アプリ情報
     getUserDataPath: () => Promise<string>

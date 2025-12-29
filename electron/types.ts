@@ -69,15 +69,27 @@ export interface ScanResult {
 }
 
 /**
+ * 監視フォルダの設定
+ */
+export interface LibraryPathConfig {
+    /** フォルダのフルパス */
+    path: string
+    /** DLsiteのみでスクレイピングするかどうか */
+    onlyDLsite: boolean
+}
+
+/**
  * アプリ設定の型
  */
 export interface AppSettings {
     /** スキャン対象フォルダのリスト */
-    libraryPaths: string[]
+    libraryPaths: (string | LibraryPathConfig)[]
     /** 自動スキャンの有効/無効 */
     autoScan: boolean
     /** スクレイピング時のリクエスト間隔（ミリ秒） */
     requestDelay: number
+    /** 伏字が含まれる可能性のある検索ワード */
+    fuzzyWords?: string[]
 }
 
 /**

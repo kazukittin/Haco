@@ -37,15 +37,15 @@ function App() {
     const [isHeaderScanning, setIsHeaderScanning] = useState(false)
 
     // ライブラリデータを読み込む
-    const loadLibraryData = useCallback(async () => {
-        setIsLoading(true)
+    const loadLibraryData = useCallback(async (silent = false) => {
+        if (!silent) setIsLoading(true)
         try {
             const data = await window.electronAPI.getLibraryData()
             setLibraryData(data)
         } catch (error) {
             console.error('Failed to load library:', error)
         } finally {
-            setIsLoading(false)
+            if (!silent) setIsLoading(false)
         }
     }, [])
 
@@ -55,7 +55,8 @@ function App() {
 
         const cleanup = window.electronAPI.onLibraryUpdated(() => {
             console.log('[App] Library update detected, reloading...')
-            loadLibraryData()
+            // バックグラウンドでの更新はisLoadingを表示しない（スクロール位置を維持するため）
+            loadLibraryData(true)
         })
 
         return cleanup
@@ -225,8 +226,10 @@ function App() {
             setIsHeaderScanning(true)
 
             // 全パスを順次スキャン
-            for (const path of settings.libraryPaths) {
-                await window.electronAPI.scanLibrary(path)
+            for (const p of settings.libraryPaths) {
+                const scanPath = typeof p === 'string' ? p : p.path
+                const onlyDLsite = typeof p === 'string' ? false : p.onlyDLsite
+                await window.electronAPI.scanLibrary(scanPath, onlyDLsite)
             }
 
             await loadLibraryData()
@@ -273,7 +276,7 @@ function App() {
         return (
             <SettingsPage
                 onBack={() => setCurrentView('library')}
-                onScanComplete={loadLibraryData}
+                onScanComplete={() => loadLibraryData(true)}
             />
         )
     }

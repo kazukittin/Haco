@@ -17,6 +17,7 @@ import {
     getRecentlyReadWorks,
     setupFolderWatcher,
     isScanning,
+    resetAppData,
 } from './library'
 import { getViewerData, getImageData } from './viewer'
 import type { AppSettings, LibraryData } from './types'
@@ -61,7 +62,7 @@ export function registerIPCHandlers(): void {
     })
 
     // ライブラリをスキャン
-    ipcMain.handle('library:scan', async (event, scanPath: string) => {
+    ipcMain.handle('library:scan', async (event, scanPath: string, onlyDLsite: boolean = false) => {
         const window = BrowserWindow.fromWebContents(event.sender)
 
         const result = await scanAndUpdateLibrary(scanPath, (current, total, rjCode, status) => {
@@ -74,7 +75,7 @@ export function registerIPCHandlers(): void {
                     status,
                 })
             }
-        })
+        }, onlyDLsite)
 
         return result
     })
@@ -201,6 +202,17 @@ export function registerIPCHandlers(): void {
     // アプリのデータフォルダパスを取得
     ipcMain.handle('app:getUserDataPath', () => {
         return app.getPath('userData')
+    })
+
+    // アプリデータをリセット
+    ipcMain.handle('system:reset', async () => {
+        return resetAppData()
+    })
+
+    // アプリを再起動
+    ipcMain.handle('system:relaunch', () => {
+        app.relaunch()
+        app.exit(0)
     })
 
     console.log('[IPC] All handlers registered')
