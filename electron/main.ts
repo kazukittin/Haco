@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, Menu } from 'electron'
 import path from 'path'
 import { registerIPCHandlers } from './ipc-handlers'
 import { setupFolderWatcher } from './library'
@@ -8,12 +8,16 @@ function createWindow() {
         width: 1200,
         height: 800,
         title: 'Haco',
+        autoHideMenuBar: true,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
             contextIsolation: true
         }
     })
+
+    // メニューバーを完全に削除
+    Menu.setApplicationMenu(null)
 
     // In development, load from Vite dev server
     if (process.env.NODE_ENV === 'development' || process.env.VITE_DEV_SERVER_URL) {

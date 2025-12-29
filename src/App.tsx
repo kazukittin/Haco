@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import type { WorkInfo, LibraryData, TagCount, CircleCount } from './vite-env.d'
-import { Sidebar } from './components/Sidebar'
 import { WorkGrid } from './components/WorkGrid'
 import { SettingsPage } from './components/SettingsPage'
 import { WorkDetailModal } from './components/WorkDetailModal'
 import { ViewerModal } from './components/ViewerModal'
+import { FilterModal } from './components/FilterModal'
 import { ScanStatus } from './components/ScanStatus'
-import { SettingsIcon, RefreshIcon } from './components/ui/icons'
+import { SettingsIcon, RefreshIcon, FilterIcon, XIcon, LibraryIcon, PlayIcon } from './components/ui/icons'
 import { Button } from './components/ui/button'
+import { Badge } from './components/ui/badge'
 
 function App() {
     // 画面状態
@@ -29,6 +30,7 @@ function App() {
 
     // モーダル状態
     const [selectedWork, setSelectedWork] = useState<WorkInfo | null>(null)
+    const [isFilterModalOpen, setIsFilterModalOpen] = useState(false)
 
     // ビューア状態
     const [viewerWork, setViewerWork] = useState<WorkInfo | null>(null)
@@ -219,6 +221,36 @@ function App() {
         setSelectedTags([tag])
     }, [])
 
+    // 詳細モーダルからサークルをクリック
+    const handleDetailCircleClick = useCallback((circle: string) => {
+        setSelectedWork(null)
+        setSelectedCircle(circle)
+        // 他のフィルターはリセット
+        setSearchQuery('')
+        setSelectedTags([])
+        setSelectedWorkType('')
+    }, [])
+
+    // 詳細モーダルから作者をクリック
+    const handleDetailAuthorClick = useCallback((author: string) => {
+        setSelectedWork(null)
+        setSearchQuery(author)
+        // 他のフィルターはリセット
+        setSelectedTags([])
+        setSelectedCircle('')
+        setSelectedWorkType('')
+    }, [])
+
+    // 詳細モーダルから形式をクリック
+    const handleDetailWorkTypeClick = useCallback((type: string) => {
+        setSelectedWork(null)
+        setSelectedWorkType(type)
+        // 他のフィルターはリセット
+        setSearchQuery('')
+        setSelectedTags([])
+        setSelectedCircle('')
+    }, [])
+
     // ヘッダーからのライブラリ更新（簡易スキャン）
     const handleHeaderScan = async () => {
         try {
@@ -304,8 +336,10 @@ function App() {
     // ライブラリ画面（メイン）
     return (
         <div className="h-screen flex bg-slate-950 overflow-hidden">
-            {/* サイドバー */}
-            <Sidebar
+            {/* フィルターモーダル */}
+            <FilterModal
+                isOpen={isFilterModalOpen}
+                onClose={() => setIsFilterModalOpen(false)}
                 searchQuery={searchQuery}
                 onSearchChange={setSearchQuery}
                 tags={tags}
@@ -318,22 +352,91 @@ function App() {
                 selectedWorkType={selectedWorkType}
                 onWorkTypeChange={setSelectedWorkType}
                 onClearFilters={handleClearFilters}
-                totalWorks={allWorks.length}
-                filteredWorks={filteredWorks.length}
             />
+
+            {/* サイドバー - スリム化 */}
+            <aside className="w-20 h-full flex flex-col items-center py-6 bg-slate-900 border-r border-white/5 backdrop-blur-sm z-20">
+                <div
+                    className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-500/20 mb-10 cursor-pointer hover:scale-105 transition-transform"
+                    onClick={() => setCurrentView('library')}
+                >
+                    <span className="text-xl font-black text-white">H</span>
+                </div>
+
+                <div className="flex flex-col gap-6 flex-1">
+                    <button
+                        onClick={() => setIsFilterModalOpen(true)}
+                        className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${isFilterModalOpen || selectedTags.length > 0 || searchQuery || selectedCircle ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'}`}
+                        title="フィルター"
+                    >
+                        <FilterIcon className="w-6 h-6" />
+                        {(selectedTags.length > 0 || searchQuery || selectedCircle) && (
+                            <div className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-slate-900" />
+                        )}
+                    </button>
+
+                    <button
+                        className="w-12 h-12 rounded-2xl bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white flex items-center justify-center transition-all"
+                        title="ライブラリ統計"
+                    >
+                        <LibraryIcon className="w-6 h-6" />
+                    </button>
+                </div>
+
+                <div className="mt-auto flex flex-col gap-4">
+                    <button
+                        onClick={handleHeaderScan}
+                        disabled={isHeaderScanning}
+                        className={`w-12 h-12 rounded-2xl bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white flex items-center justify-center transition-all ${isHeaderScanning ? 'opacity-50' : ''}`}
+                        title="ライブラリを更新"
+                    >
+                        <RefreshIcon className={`w-5 h-5 ${isHeaderScanning ? 'animate-spin' : ''}`} />
+                    </button>
+
+                    <button
+                        onClick={() => setCurrentView('settings')}
+                        className="w-12 h-12 rounded-2xl bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white flex items-center justify-center transition-all"
+                        title="設定"
+                    >
+                        <SettingsIcon className="w-6 h-6" />
+                    </button>
+                </div>
+            </aside>
 
             {/* メインコンテンツ */}
             <main className="flex-1 flex flex-col overflow-hidden">
                 {/* ヘッダーバー */}
                 <header className="h-14 flex items-center justify-between px-6 border-b border-white/5 bg-slate-900/30 backdrop-blur-sm">
                     <div className="flex items-center gap-4">
-                        <h2 className="text-lg font-semibold text-white">ライブラリ</h2>
-                        {selectedTags.length > 0 || selectedCircle ? (
-                            <div className="flex items-center gap-2 text-sm text-slate-400">
-                                <span>フィルター適用中</span>
-                                <span className="text-purple-400">({filteredWorks.length}件)</span>
+                        <div className="md:hidden">
+                            {/* Mobile logo or toggle */}
+                        </div>
+                        <h2 className="text-xl font-bold text-white font-outfit">Library</h2>
+
+                        {(selectedTags.length > 0 || selectedCircle || searchQuery) ? (
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500 ml-4 uppercase tracking-widest font-black">Filtered</span>
+                                <div className="flex items-center gap-2">
+                                    <Badge variant="secondary" className="bg-purple-500/10 text-purple-400 border-purple-500/20 px-3">
+                                        {filteredWorks.length} works
+                                    </Badge>
+                                    <button
+                                        onClick={handleClearFilters}
+                                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-500 hover:text-white transition-all"
+                                        title="フィルターを全解除"
+                                    >
+                                        <XIcon className="w-4 h-4" />
+                                    </button>
+                                </div>
                             </div>
-                        ) : null}
+                        ) : (
+                            <div className="flex items-center gap-2 ml-4">
+                                <span className="text-xs text-slate-500 uppercase tracking-widest font-black">Collection</span>
+                                <Badge variant="outline" className="border-white/10 text-slate-400">
+                                    {allWorks.length} items
+                                </Badge>
+                            </div>
+                        )}
                     </div>
 
                     {/* ヘッダー右側のアクション */}
@@ -355,25 +458,6 @@ function App() {
                         </div>
 
                         <div className="w-px h-6 bg-white/10" />
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={handleHeaderScan}
-                            disabled={isHeaderScanning}
-                            className="text-slate-400 hover:text-white hover:bg-white/5"
-                            title="ライブラリを更新（新規フォルダをスキャン）"
-                        >
-                            <RefreshIcon className={`w-4 h-4 mr-2 ${isHeaderScanning ? 'animate-spin' : ''}`} />
-                            {isHeaderScanning ? '更新中...' : '更新'}
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setCurrentView('settings')}
-                            className="text-slate-400 hover:text-white hover:bg-white/5"
-                        >
-                            <SettingsIcon className="w-5 h-5" />
-                        </Button>
                     </div>
                 </header>
 
@@ -409,6 +493,22 @@ function App() {
                                                     {work.title.charAt(0)}
                                                 </div>
                                             )}
+                                            {/* 読むボタン (ホバー時に表示) */}
+                                            <div
+                                                className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center"
+                                            >
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleOpenViewer(work);
+                                                    }}
+                                                    className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl text-xs font-black shadow-xl transform translate-y-4 group-hover:translate-y-0 transition-all duration-300 flex items-center gap-2"
+                                                >
+                                                    <PlayIcon className="w-4 h-4" />
+                                                    読む
+                                                </button>
+                                            </div>
+
                                             {/* 進捗バー */}
                                             {work.totalPages && work.lastReadPage !== undefined && (
                                                 <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
@@ -449,6 +549,9 @@ function App() {
                 work={selectedWork}
                 onClose={() => setSelectedWork(null)}
                 onTagClick={handleDetailTagClick}
+                onCircleClick={handleDetailCircleClick}
+                onAuthorClick={handleDetailAuthorClick}
+                onWorkTypeClick={handleDetailWorkTypeClick}
                 onPlay={handleOpenViewer}
                 onRefresh={loadLibraryData}
             />
@@ -463,6 +566,7 @@ function App() {
                     rjCode={viewerWork.rjCode}
                     initialPage={viewerWork.lastReadPage || 0}
                     thumbnailUrl={viewerWork.thumbnailUrl}
+                    bindingDirection={viewerWork.bindingDirection}
                 />
             )}
 

@@ -49,5 +49,20 @@
     "react-dom": "^18.2.0",
     "tailwind-merge": "^3.4.0",
     "unrar-promise": "^3.1.0"
+  },
+  "build": {
+    "appId": "com.haco.app",
+    "productName": "Haco",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist",
+      "dist-electron"
+    ],
+    "win": {
+      "target": "portable",
+      "artifactName": "${productName}_v${version}.${ext}"
+    }
   }
 }

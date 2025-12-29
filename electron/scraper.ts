@@ -23,7 +23,7 @@ const EXCLUDED_TAG_WORDS = [
     '動画', 'アニメ',
     '書籍', '雑誌', '電子書籍',
     '成人向け', '全年齢', 'R-18',
-    'JPEG', 'PNG'
+    'JPEG', 'PNG', 'PDF同封'
 ]
 
 /**

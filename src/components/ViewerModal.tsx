@@ -19,9 +19,10 @@ interface ViewerModalProps {
     rjCode: string
     initialPage?: number
     thumbnailUrl?: string
+    bindingDirection?: 'rtl' | 'ltr'
 }
 
-export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialPage = 0, thumbnailUrl }: ViewerModalProps) {
+export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialPage = 0, thumbnailUrl, bindingDirection }: ViewerModalProps) {
     const [viewerData, setViewerData] = useState<ViewerData | null>(null)
     const [currentPage, setCurrentPage] = useState(initialPage)
     const [initialLoading, setInitialLoading] = useState(true)
@@ -31,7 +32,7 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
     const [overlayVisible, setOverlayVisible] = useState(true)
     const [isFullScreen, setIsFullScreen] = useState(false)
     const [theme, setTheme] = useState<'black' | 'dark' | 'sepia' | 'white'>('black')
-    const [binding, setBinding] = useState<'rtl' | 'ltr'>('rtl')
+    const [binding, setBinding] = useState<'rtl' | 'ltr'>(bindingDirection || 'rtl')
     const [error, setError] = useState<string | null>(null)
 
     // オートハイド用のタイマー
@@ -79,7 +80,9 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
             // 初期設定の読み込み
             window.electronAPI.getSettings().then(s => {
                 if (s.viewerTheme) setTheme(s.viewerTheme)
-                // 作品ごとの設定があれば優先（将来的に実装）
+                // 作品の綴じ方向があれば優先
+                if (bindingDirection) setBinding(bindingDirection)
+                else if (s.defaultBindingDirection) setBinding(s.defaultBindingDirection)
             })
         }
 
@@ -235,33 +238,50 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
         const centerStart = width * 0.4
         const centerEnd = width * 0.6
 
+        // 進退の向きを判定（左開き or 見開き の場合は物理的な向きを逆転させるユーザー要望に対応）
+        const shouldReverse = binding === 'ltr' || isSpreadMode
+
         if (clickX < centerStart) {
             // 左エリア
-            binding === 'rtl' ? nextPage() : prevPage()
+            const isForward = binding === 'rtl'
+            const actualForward = shouldReverse ? !isForward : isForward
+            actualForward ? nextPage() : prevPage()
         } else if (clickX > centerEnd) {
             // 右エリア
-            binding === 'rtl' ? prevPage() : nextPage()
+            const isForward = binding === 'ltr'
+            const actualForward = shouldReverse ? !isForward : isForward
+            actualForward ? nextPage() : prevPage()
         } else {
             // 中央エリア → オーバーレイ切り替え
             setOverlayVisible(prev => !prev)
         }
-    }, [prevPage, nextPage, binding])
+    }, [prevPage, nextPage, binding, isSpreadMode])
 
     // キーボード操作
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (!isOpen) return
 
+            const shouldReverse = binding === 'ltr' || isSpreadMode
+
             switch (e.key) {
                 case 'ArrowRight':
                 case ' ': // Space
                     e.preventDefault()
-                    binding === 'rtl' ? prevPage() : nextPage()
+                    {
+                        const isForward = binding === 'ltr'
+                        const actualForward = shouldReverse ? !isForward : isForward
+                        actualForward ? nextPage() : prevPage()
+                    }
                     break
                 case 'ArrowLeft':
                 case 'Backspace':
                     e.preventDefault()
-                    binding === 'rtl' ? nextPage() : prevPage()
+                    {
+                        const isForward = binding === 'rtl'
+                        const actualForward = shouldReverse ? !isForward : isForward
+                        actualForward ? nextPage() : prevPage()
+                    }
                     break
                 case 'Escape':
                     onClose()
@@ -281,19 +301,30 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
 
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [isOpen, nextPage, prevPage, onClose, goToPage, viewerData])
+    }, [isOpen, nextPage, prevPage, onClose, goToPage, viewerData, binding, isSpreadMode])
 
     // ホイール操作
     const handleWheel = useCallback((e: React.WheelEvent) => {
         // スクロール量に応じてページ送り
         if (Math.abs(e.deltaY) > 30) {
+            const shouldReverse = binding === 'ltr' || isSpreadMode
             if (e.deltaY > 0) {
-                binding === 'rtl' ? prevPage() : nextPage()
+                // Down -> Forward
+                const isForward = true // Standard scroll direction
+                // However current implementation has binding-based logic
+                binding === 'rtl' ? prevPage() : nextPage() // This was problematic
+                // Let's use the same logic as arrows
+                const isForwardRight = binding === 'ltr'
+                const actualForward = shouldReverse ? !isForwardRight : isForwardRight
+                actualForward ? nextPage() : prevPage()
             } else {
-                binding === 'rtl' ? nextPage() : prevPage()
+                // Up -> Backward
+                const isForwardRight = binding === 'ltr'
+                const actualForward = shouldReverse ? !isForwardRight : isForwardRight
+                actualForward ? prevPage() : nextPage()
             }
         }
-    }, [nextPage, prevPage, binding])
+    }, [nextPage, prevPage, binding, isSpreadMode])
 
     if (!isOpen) return null
 
