@@ -12,8 +12,19 @@ const REQUEST_HEADERS = {
     'Upgrade-Insecure-Requests': '1',
 }
 
-// DLsiteのドメイン一覧（検索順序）
+// 伏文字などの記号
 const DLSITE_DOMAINS = ['maniax', 'home', 'girls', 'bl']
+
+// タグから除外するメタデータワード
+const EXCLUDED_TAG_WORDS = [
+    'マンガ', '漫画', 'CG・イラスト', 'CG集', 'イラスト',
+    'ゲーム', 'RPG', 'ADV', 'ノベル',
+    'ボイス', 'ASMR', '音声',
+    '動画', 'アニメ',
+    '書籍', '雑誌', '電子書籍',
+    '成人向け', '全年齢', 'R-18',
+    'JPEG', 'PNG'
+]
 
 /**
  * タイトルが十分に近いか判定（特に数字の一致を重視）
@@ -157,11 +168,11 @@ function parseDLsitePage(html: string, rjCode: string, localPath: string): WorkI
         }
     })
 
-    // タグ一覧の取得
+    // タグ一覧の取得（「マンガ」「ボイス」などの形式タグを除外）
     const tags: string[] = []
     $('.main_genre a, .work_genre a, div.genre a').each((_, elem) => {
         const tag = $(elem).text().trim()
-        if (tag && !tags.includes(tag)) {
+        if (tag && !tags.includes(tag) && !EXCLUDED_TAG_WORDS.includes(tag)) {
             tags.push(tag)
         }
     })
@@ -379,7 +390,6 @@ export async function scrapeByTitle(title: string, localPath: string, workId: st
                             console.log(`[Scraper] Good match found: "${linkTitle}" -> ${rjCode}`)
                             const workInfo = await scrapeWorkInfo(rjCode, localPath)
                             if (workInfo) {
-                                workInfo.rjCode = workId
                                 return workInfo
                             }
                         }
@@ -471,7 +481,7 @@ export async function scrapeFromGoogleBooks(title: string, localPath: string, wo
                 title: book.title || title,
                 circle: book.publisher || 'Google Books',
                 authors: book.authors || [],
-                tags: book.categories || ['書籍'],
+                tags: (book.categories || []).filter((tag: string) => !EXCLUDED_TAG_WORDS.includes(tag)),
                 description: book.description?.slice(0, 1000) || '',
                 thumbnailUrl,
                 localPath,

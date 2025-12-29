@@ -37,6 +37,7 @@ export function WorkDetailModal({ work, onClose, onTagClick, onPlay, onRefresh }
 
     const startEditing = () => {
         setEditData({
+            rjCode: work.rjCode,
             title: work.title,
             circle: work.circle,
             authors: work.authors,
@@ -189,11 +190,20 @@ export function WorkDetailModal({ work, onClose, onTagClick, onPlay, onRefresh }
                     {/* 右：詳細情報 */}
                     <div className="flex-1 p-6 overflow-y-auto">
                         {/* RJコード & ステータス & お気に入り */}
-                        <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center justify-between mb-3 pr-10">
                             <div className="flex items-center gap-2">
-                                <Badge variant="secondary" className="bg-purple-600/20 text-purple-300 border-purple-500/30">
-                                    {work.rjCode}
-                                </Badge>
+                                {isEditing ? (
+                                    <input
+                                        value={editData.rjCode || ''}
+                                        onChange={(e) => setEditData({ ...editData, rjCode: e.target.value.toUpperCase() })}
+                                        className="bg-slate-800 border border-purple-500/50 rounded px-2 py-0.5 text-xs text-purple-300 w-24 outline-none"
+                                        placeholder="RJXXXXXX"
+                                    />
+                                ) : (
+                                    <Badge variant="secondary" className="bg-purple-600/20 text-purple-300 border-purple-500/30">
+                                        {work.rjCode}
+                                    </Badge>
+                                )}
                                 <select
                                     value={work.readingStatus || 'unread'}
                                     onChange={(e) => handleChangeStatus(e.target.value as any)}

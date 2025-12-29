@@ -7,7 +7,7 @@ import { WorkDetailModal } from './components/WorkDetailModal'
 import { ViewerModal } from './components/ViewerModal'
 import { ScanStatus } from './components/ScanStatus'
 import { SettingsIcon, RefreshIcon } from './components/ui/icons'
-import { Button } from '@/components/ui/button'
+import { Button } from './components/ui/button'
 
 function App() {
     // 画面状態
@@ -245,32 +245,47 @@ function App() {
         }
     }
 
-    // データがまだない場合のウェルカム画面
-    if (!isLoading && allWorks.length === 0 && currentView !== 'settings') {
+    // ローディング中
+    if (isLoading && !libraryData) {
         return (
-            <div className="h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900/20 to-slate-900">
-                {/* 背景エフェクト */}
-                <div className="absolute top-1/4 left-1/4 w-72 h-72 bg-purple-500/20 rounded-full blur-3xl" />
-                <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl" />
+            <div className="h-screen flex items-center justify-center bg-slate-950 text-white">
+                <div className="flex flex-col items-center gap-4">
+                    <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                    <p className="text-slate-400 font-medium">Haco 起動中...</p>
+                </div>
+            </div>
+        )
+    }
 
-                <div className="relative z-10 text-center space-y-6 px-4">
-                    <div className="w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-2xl shadow-purple-500/30">
-                        <span className="text-3xl font-bold text-white">H</span>
+    // データがまだない場合のウェルカム画面
+    if (!isLoading && (!libraryData || allWorks.length === 0) && currentView !== 'settings') {
+        return (
+            <div className="h-screen flex flex-col items-center justify-center bg-slate-950 relative overflow-hidden">
+                {/* 背景グラデーションエフェクト */}
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(76,29,149,0.15),transparent_70%)]" />
+                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/10 blur-[120px] rounded-full" />
+                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-900/10 blur-[120px] rounded-full" />
+
+                <div className="relative z-10 text-center space-y-8 px-4 max-w-lg">
+                    <div className="w-24 h-24 mx-auto rounded-[2rem] bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-[0_0_50px_rgba(139,92,246,0.3)] animate-in zoom-in duration-700">
+                        <span className="text-4xl font-bold text-white tracking-tighter">H</span>
                     </div>
 
-                    <div className="space-y-2">
-                        <h1 className="text-4xl font-bold text-white">Hacoへようこそ</h1>
-                        <p className="text-slate-400 max-w-md">
+                    <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-200">
+                        <h1 className="text-5xl font-bold text-white tracking-tight font-outfit">Hacoへようこそ</h1>
+                        <p className="text-slate-400 text-lg leading-relaxed">
                             ライブラリを始めるには、設定から作品フォルダを登録してください。
                         </p>
                     </div>
 
-                    <button
-                        onClick={() => setCurrentView('settings')}
-                        className="px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-medium rounded-xl shadow-lg shadow-purple-500/25 transition-all duration-300 hover:scale-105"
-                    >
-                        設定を開く
-                    </button>
+                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-500">
+                        <Button
+                            onClick={() => setCurrentView('settings')}
+                            className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-[0_10px_25px_rgba(139,92,246,0.25)] px-10 py-6 text-lg rounded-2xl transition-all hover:scale-105 active:scale-95"
+                        >
+                            設定を開く
+                        </Button>
+                    </div>
                 </div>
             </div>
         )
@@ -303,12 +318,8 @@ function App() {
                 selectedWorkType={selectedWorkType}
                 onWorkTypeChange={setSelectedWorkType}
                 onClearFilters={handleClearFilters}
-                // サイドバーの更新ボタンは表示のみの更新にする
-                onRefresh={loadLibraryData}
-                onOpenSettings={() => setCurrentView('settings')}
                 totalWorks={allWorks.length}
                 filteredWorks={filteredWorks.length}
-                isLoading={isLoading}
             />
 
             {/* メインコンテンツ */}

@@ -1,19 +1,17 @@
-import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Select } from '@/components/ui/select'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { Input } from './ui/input'
+import { Badge } from './ui/badge'
+import { Button } from './ui/button'
+import { Select } from './ui/select'
+import { ScrollArea } from './ui/scroll-area'
 import {
     SearchIcon,
     TagIcon,
     UsersIcon,
     FilterIcon,
     XIcon,
-    RefreshIcon,
-    SettingsIcon,
     LibraryIcon,
-} from '@/components/ui/icons'
-import type { TagCount, CircleCount } from '@/vite-env.d'
+} from './ui/icons'
+import type { TagCount, CircleCount } from '../vite-env.d'
 
 interface WorkTypeCount {
     type: string
@@ -33,11 +31,8 @@ interface SidebarProps {
     selectedWorkType: string
     onWorkTypeChange: (workType: string) => void
     onClearFilters: () => void
-    onRefresh: () => void
-    onOpenSettings: () => void
     totalWorks: number
     filteredWorks: number
-    isLoading?: boolean
 }
 
 export function Sidebar({
@@ -53,11 +48,8 @@ export function Sidebar({
     selectedWorkType,
     onWorkTypeChange,
     onClearFilters,
-    onRefresh,
-    onOpenSettings,
     totalWorks,
     filteredWorks,
-    isLoading = false,
 }: SidebarProps) {
     const hasActiveFilters = searchQuery || selectedTags.length > 0 || selectedCircle || selectedWorkType
 
@@ -215,9 +207,8 @@ export function Sidebar({
             </ScrollArea>
 
             {/* フッター */}
-            <div className="p-4 border-t border-white/5 space-y-2">
-                {/* フィルタークリアボタン */}
-                {hasActiveFilters && (
+            {hasActiveFilters && (
+                <div className="p-4 border-t border-white/5">
                     <Button
                         variant="outline"
                         size="sm"
@@ -227,31 +218,8 @@ export function Sidebar({
                         <FilterIcon className="w-4 h-4 mr-2" />
                         フィルターをクリア
                     </Button>
-                )}
-
-                {/* アクションボタン */}
-                <div className="flex gap-2">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 bg-transparent border-white/10 text-slate-300 hover:bg-white/5"
-                        onClick={onRefresh}
-                        disabled={isLoading}
-                    >
-                        <RefreshIcon className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-                        更新
-                    </Button>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 bg-transparent border-white/10 text-slate-300 hover:bg-white/5"
-                        onClick={onOpenSettings}
-                    >
-                        <SettingsIcon className="w-4 h-4 mr-2" />
-                        設定
-                    </Button>
                 </div>
-            </div>
+            )}
         </aside>
     )
 }

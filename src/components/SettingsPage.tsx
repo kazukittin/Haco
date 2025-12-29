@@ -142,14 +142,9 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
                 // ファイル削除
                 await window.electronAPI.resetApp()
 
-                // 少し待ってから再起動
-                setTimeout(async () => {
-                    try {
-                        await window.electronAPI.relaunch()
-                    } catch (e) {
-                        console.error('Relaunch failed:', e)
-                        alert('アプリの再起動に失敗しました。手動でアプリを再起動してください。')
-                    }
+                // 少し待ってから画面を再読み込み（リセットをメインプロセスに反映させる）
+                setTimeout(() => {
+                    window.location.reload()
                 }, 500)
             } catch (error) {
                 console.error('Reset error:', error)

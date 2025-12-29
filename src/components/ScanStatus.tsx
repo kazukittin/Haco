@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ScanProgress } from '@/vite-env.d'
+import type { ScanProgress } from '../vite-env.d'
 
 export function ScanStatus() {
     const [progress, setProgress] = useState<ScanProgress | null>(null)

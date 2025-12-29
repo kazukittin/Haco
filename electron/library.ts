@@ -467,10 +467,49 @@ export async function scanAndUpdateLibrary(
                     const workInfo = await scrapeByTitleWithFallback(titleFromFile, folderPath, rjCode, onlyDLsite, settings.fuzzyWords || [])
 
                     if (workInfo) {
-                        libraryData.works[rjCode] = ensureThumbnail(workInfo)
+                        let finalRjCode = workInfo.rjCode
+
+                        // LOCAL_ 作品のリネーム処理
+                        if (rjCode.startsWith('LOCAL_')) {
+                            try {
+                                const dir = path.dirname(folderPath)
+                                const ext = fs.statSync(folderPath).isDirectory() ? '' : path.extname(folderPath)
+                                const safeTitle = workInfo.title.replace(/[\\/:*?"<>|]/g, '_')
+
+                                let newFileName = ''
+                                if (!finalRjCode.startsWith('LOCAL_')) {
+                                    // RJコードが見つかった場合: [RJxxxxxx] タイトル
+                                    newFileName = `[${finalRjCode}] ${safeTitle}${ext}`
+                                    console.log(`[Library] Discovered RJ code: ${rjCode} -> ${finalRjCode}`)
+                                } else if (workInfo.title !== titleFromFile) {
+                                    // RJコードはないが、新しいタイトルが見つかった場合: タイトル
+                                    newFileName = `${safeTitle}${ext}`
+                                    console.log(`[Library] New title found for local work: "${titleFromFile}" -> "${workInfo.title}"`)
+                                }
+
+                                if (newFileName) {
+                                    const newPath = path.join(dir, newFileName)
+                                    if (folderPath !== newPath && !fs.existsSync(newPath)) {
+                                        fs.renameSync(folderPath, newPath)
+                                        console.log(`[Library] Renamed local folder: ${folderPath} -> ${newPath}`)
+                                        workInfo.localPath = newPath
+                                    }
+                                }
+                            } catch (err) {
+                                console.error('[Library] Failed to rename folder after discovery:', err)
+                            }
+                        }
+
+                        libraryData.works[finalRjCode] = ensureThumbnail(workInfo)
                         result.success++
-                        result.newWorks.push(rjCode)
-                        console.log(`[Library] Found info for: ${titleFromFile}`)
+                        result.newWorks.push(finalRjCode)
+
+                        // IDが変わった場合は元のエントリを削除
+                        if (finalRjCode !== rjCode && libraryData.works[rjCode]) {
+                            delete libraryData.works[rjCode]
+                        }
+
+                        console.log(`[Library] Found info for: ${titleFromFile} (${finalRjCode})`)
                     } else {
                         // 見つからなかった場合はフォールバック
                         libraryData.works[rjCode] = ensureThumbnail({
@@ -849,29 +888,77 @@ export async function updateWorkInfo(rjCode: string, updates: Partial<WorkInfo>)
         }
     }
 
-    const oldRjCode = rjCode
     let currentRjCode = rjCode
-    let updatedWork = {
-        ...work,
-        ...updates
-    }
+    const oldRjCode = rjCode
 
-    // LOCAL_ 作品の場合、タイトルが変わると ID も変わる可能性があるため同期させる
-    if (rjCode.startsWith('LOCAL_') && updates.title) {
+    // Explicit rjCode update
+    if (updates.rjCode && updates.rjCode !== rjCode) {
+        console.log(`[Library] Updating work ID (explicit): ${rjCode} -> ${updates.rjCode}`)
+        const newRjCode = updates.rjCode.trim().toUpperCase()
+        currentRjCode = newRjCode
+        updates.rjCode = newRjCode
+
+        // RJコードが新しく設定された場合、即座にオンライン情報を取得
+        if (newRjCode.startsWith('RJ')) {
+            try {
+                const scrapedInfo = await scrapeWorkInfo(newRjCode, work.localPath)
+                if (scrapedInfo) {
+                    console.log(`[Library] Successfully fetched info for ${newRjCode} during manual ID update (Overwriting)`)
+                    // 取得した情報を最優先する（手動の他項目編集を上書き）
+                    updates = {
+                        ...updates,
+                        ...ensureThumbnail(scrapedInfo)
+                    }
+                }
+            } catch (err) {
+                console.error(`[Library] Failed to fetch info for edited ID ${newRjCode}:`, err)
+            }
+        }
+        // Update local path if it contains the old RJ code
+        const oldPath = work.localPath
+        if (fs.existsSync(oldPath)) {
+            try {
+                const dir = path.dirname(oldPath)
+                const ext = fs.statSync(oldPath).isDirectory() ? '' : path.extname(oldPath)
+                const safeTitle = (updates.title || work.title).replace(/[\\/:*?"<>|]/g, '_')
+
+                let newFileName = ''
+                if (!currentRjCode.startsWith('LOCAL_')) {
+                    newFileName = `[${currentRjCode}] ${safeTitle}${ext}`
+                } else {
+                    newFileName = `${safeTitle}${ext}`
+                }
+
+                const newPath = path.join(dir, newFileName)
+                if (oldPath !== newPath && !fs.existsSync(newPath)) {
+                    fs.renameSync(oldPath, newPath)
+                    work.localPath = newPath
+                }
+            } catch (err) {
+                console.error('[Library] Error renaming for new RJ code:', err)
+            }
+        }
+        delete data.works[oldRjCode]
+    }
+    // LOCAL_ 作品の場合、タイトルが変わると ID も変わる可能性があるため同期させる (rjCode明示更新がない場合のみ)
+    else if (rjCode.startsWith('LOCAL_') && updates.title) {
         // タイトル変更後の新しいIDを生成
         const baseNameForId = updates.title.replace(/[\\/:*?"<>|]/g, '_')
         const newRjCode = generateWorkId(baseNameForId)
 
         if (newRjCode !== rjCode) {
             console.log(`[Library] Updating LOCAL work ID due to title change: ${rjCode} -> ${newRjCode}`)
-            updatedWork.rjCode = newRjCode
             currentRjCode = newRjCode
             // 古いエントリーを削除
             delete data.works[oldRjCode]
         }
     }
 
-    data.works[currentRjCode] = updatedWork
+    data.works[currentRjCode] = {
+        ...work,
+        ...updates,
+        rjCode: currentRjCode
+    }
 
     return saveLibraryData(data)
 }

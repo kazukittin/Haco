@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import type { WorkInfo } from '@/vite-env.d'
-import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
-import { HeartIcon } from '@/components/ui/icons'
+import type { WorkInfo } from '../vite-env.d'
+import { Badge } from './ui/badge'
+import { Skeleton } from './ui/skeleton'
+import { HeartIcon } from './ui/icons'
 
 interface WorkCardProps {
     work: WorkInfo
