@@ -21,7 +21,7 @@ export function WorkCard({ work, onClick }: WorkCardProps) {
 
     return (
         <div
-            className="group relative rounded-xl overflow-hidden bg-slate-900/50 border border-white/5 hover:border-purple-500/50 transition-all duration-300 cursor-pointer hover:scale-[1.02] hover:shadow-xl hover:shadow-purple-500/10"
+            className="group relative rounded-xl overflow-hidden bg-card border border-white/5 hover:border-purple-500/50 transition-all duration-300 cursor-pointer hover:-translate-y-1 hover:shadow-2xl hover:shadow-purple-500/20"
             onClick={handleClick}
         >
             {/* サムネイル画像 */}
@@ -40,7 +40,7 @@ export function WorkCard({ work, onClick }: WorkCardProps) {
                         <img
                             src={work.thumbnailUrl}
                             alt={work.title}
-                            className={`w-full h-full object-cover transition-all duration-500 group-hover:scale-105 ${imageLoaded ? 'opacity-100' : 'opacity-0'
+                            className={`w-full h-full object-contain transition-all duration-500 group-hover:scale-105 ${imageLoaded ? 'opacity-100' : 'opacity-0'
                                 }`}
                             onLoad={() => setImageLoaded(true)}
                             onError={() => setImageError(true)}

@@ -19,41 +19,54 @@ interface ViewerModalProps {
 export function ViewerModal({ isOpen, onClose, workPath, title }: ViewerModalProps) {
     const [viewerData, setViewerData] = useState<ViewerData | null>(null)
     const [currentPage, setCurrentPage] = useState(0)
-    const [loading, setLoading] = useState(true)
+    const [initialLoading, setInitialLoading] = useState(true)
+    const [imageLoading, setImageLoading] = useState(false)
     const [imageUrls, setImageUrls] = useState<Record<number, string>>({})
     const [isSpreadMode, setIsSpreadMode] = useState(false)
     const [overlayVisible, setOverlayVisible] = useState(true)
+    const [error, setError] = useState<string | null>(null)
 
     // オートハイド用のタイマー
     const overlayTimerRef = useRef<NodeJS.Timeout | null>(null)
+    const containerRef = useRef<HTMLDivElement>(null)
 
     // ビューアデータを読み込む
     useEffect(() => {
         if (isOpen && workPath) {
-            setLoading(true)
+            setInitialLoading(true)
+            setError(null)
+
             window.electronAPI.getViewerData(workPath)
                 .then(data => {
-                    setViewerData(data)
-                    setCurrentPage(0)
-                    setImageUrls({})
-                    setLoading(false)
+                    if (data && data.totalImages > 0) {
+                        setViewerData(data)
+                        setCurrentPage(0)
+                        setImageUrls({})
+                    } else {
+                        setError('画像が見つかりませんでした')
+                    }
+                    setInitialLoading(false)
                 })
                 .catch(err => {
                     console.error("Failed to load viewer data", err)
-                    setLoading(false)
+                    setError('ビューアの初期化に失敗しました')
+                    setInitialLoading(false)
                 })
         }
 
         return () => {
             // クリーンアップ
-            setViewerData(null)
-            setImageUrls({})
+            if (!isOpen) {
+                setViewerData(null)
+                setImageUrls({})
+                setCurrentPage(0)
+            }
         }
     }, [isOpen, workPath])
 
     // 画像を読み込む（現在ページ周辺をプリロード）
     useEffect(() => {
-        if (!viewerData) return
+        if (!viewerData || viewerData.totalImages === 0) return
 
         const loadImages = async () => {
             const pagesToLoad = new Set<number>()
@@ -66,10 +79,15 @@ export function ViewerModal({ isOpen, onClose, workPath, title }: ViewerModalPro
                 pagesToLoad.add(currentPage + 1)
             }
 
-            // 前後3ページをプリロード
-            for (let i = 1; i <= 3; i++) {
+            // 前後5ページをプリロード（高速読み込みのため）
+            for (let i = 1; i <= 5; i++) {
                 if (currentPage - i >= 0) pagesToLoad.add(currentPage - i)
                 if (currentPage + i < viewerData.totalImages) pagesToLoad.add(currentPage + i)
+            }
+
+            // 現在のページがまだ読み込まれていない場合はローディング表示
+            if (!imageUrls[currentPage]) {
+                setImageLoading(true)
             }
 
             // 未読み込みの画像のみ取得
@@ -100,10 +118,11 @@ export function ViewerModal({ isOpen, onClose, workPath, title }: ViewerModalPro
             if (hasNew) {
                 setImageUrls(prev => ({ ...prev, ...newUrls }))
             }
+            setImageLoading(false)
         }
 
         loadImages()
-    }, [viewerData, currentPage, isSpreadMode, imageUrls])
+    }, [viewerData, currentPage, isSpreadMode]) // imageUrlsを依存から除外（無限ループ防止）
 
     // マウス移動でオーバーレイ表示
     const handleMouseMove = useCallback(() => {
@@ -137,14 +156,40 @@ export function ViewerModal({ isOpen, onClose, workPath, title }: ViewerModalPro
     const nextPage = useCallback(() => {
         if (!viewerData) return
         const increment = isSpreadMode ? 2 : 1
-        goToPage(currentPage + increment)
-    }, [currentPage, isSpreadMode, viewerData, goToPage])
+        const newPage = Math.min(currentPage + increment, viewerData.totalImages - 1)
+        setCurrentPage(newPage)
+    }, [currentPage, isSpreadMode, viewerData])
 
     const prevPage = useCallback(() => {
         if (!viewerData) return
         const increment = isSpreadMode ? 2 : 1
-        goToPage(currentPage - increment)
-    }, [currentPage, isSpreadMode, viewerData, goToPage])
+        const newPage = Math.max(currentPage - increment, 0)
+        setCurrentPage(newPage)
+    }, [currentPage, isSpreadMode, viewerData])
+
+    // 画面クリックでページ送り（左右エリア判定）
+    const handleImageAreaClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        if (!containerRef.current) return
+
+        const rect = containerRef.current.getBoundingClientRect()
+        const clickX = e.clientX - rect.left
+        const width = rect.width
+
+        // 中央20%はオーバーレイ切り替え
+        const centerStart = width * 0.4
+        const centerEnd = width * 0.6
+
+        if (clickX < centerStart) {
+            // 左エリア → 前のページ
+            prevPage()
+        } else if (clickX > centerEnd) {
+            // 右エリア → 次のページ
+            nextPage()
+        } else {
+            // 中央エリア → オーバーレイ切り替え
+            setOverlayVisible(prev => !prev)
+        }
+    }, [prevPage, nextPage])
 
     // キーボード操作
     useEffect(() => {
@@ -154,84 +199,94 @@ export function ViewerModal({ isOpen, onClose, workPath, title }: ViewerModalPro
             switch (e.key) {
                 case 'ArrowRight':
                 case ' ': // Space
+                    e.preventDefault()
                     nextPage()
                     break
                 case 'ArrowLeft':
                 case 'Backspace':
+                    e.preventDefault()
                     prevPage()
                     break
                 case 'Escape':
                     onClose()
                     break
                 case 'f':
+                case 'F':
                     setIsSpreadMode(prev => !prev)
+                    break
+                case 'Home':
+                    goToPage(0)
+                    break
+                case 'End':
+                    if (viewerData) goToPage(viewerData.totalImages - 1)
                     break
             }
         }
 
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [isOpen, nextPage, prevPage, onClose])
+    }, [isOpen, nextPage, prevPage, onClose, goToPage, viewerData])
 
     // ホイール操作
-    useEffect(() => {
-        const handleWheel = (e: WheelEvent) => {
-            if (!isOpen) return
-
-            // 横スクロールまたは強い縦スクロールでページ移動
-            if (Math.abs(e.deltaY) > 50 || Math.abs(e.deltaX) > 50) {
-                if (e.deltaY > 0 || e.deltaX > 0) {
-                    nextPage()
-                } else {
-                    prevPage()
-                }
+    const handleWheel = useCallback((e: React.WheelEvent) => {
+        // スクロール量に応じてページ送り
+        if (Math.abs(e.deltaY) > 30) {
+            if (e.deltaY > 0) {
+                nextPage()
+            } else {
+                prevPage()
             }
         }
-
-        // イベントリスナーをパッシブでない設定で追加する必要がある場合があるが、
-        // ここではReactのイベントではなくwindowイベントを使用
-        // ただし、Reactコンポーネント内でのホイールイベントの方が制御しやすいので
-        // ここではコンポーネントのdivにonWheelを設定する方式をとる
-    }, [isOpen, nextPage, prevPage])
+    }, [nextPage, prevPage])
 
     if (!isOpen) return null
+
+    // ページ情報
+    const currentImageInfo = viewerData?.images[currentPage]
 
     return (
         <div
             className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center overflow-hidden"
             onMouseMove={handleMouseMove}
-            onClick={() => setOverlayVisible(prev => !prev)}
         >
             {/* 画像表示エリア */}
             <div
-                className="flex-1 w-full h-full flex items-center justify-center relative select-none"
-                onWheel={(e) => {
-                    // コンテンツがスクロール可能でない場合のみページ送り
-                    if (e.currentTarget.scrollHeight <= e.currentTarget.clientHeight) {
-                        if (e.deltaY > 0) nextPage()
-                        else if (e.deltaY < 0) prevPage()
-                    }
-                }}
+                ref={containerRef}
+                className="flex-1 w-full h-full flex items-center justify-center relative select-none cursor-pointer"
+                onClick={handleImageAreaClick}
+                onWheel={handleWheel}
             >
-                {loading ? (
+                {initialLoading ? (
+                    // 初期ローディング
                     <div className="flex flex-col items-center gap-4 text-white">
-                        <div className="w-10 h-10 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
-                        <p>Loading...</p>
+                        <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                        <p className="text-lg">読み込み中...</p>
+                    </div>
+                ) : error ? (
+                    // エラー表示
+                    <div className="flex flex-col items-center gap-4 text-white">
+                        <div className="text-6xl">📁</div>
+                        <p className="text-lg text-red-400">{error}</p>
+                        <Button variant="outline" onClick={onClose}>
+                            閉じる
+                        </Button>
                     </div>
                 ) : viewerData ? (
-                    <div className={`flex items-center justify-center gap-0 w-full h-full p-4 ${isSpreadMode ? 'flex-row-reverse' : ''}`}>
-                        {/* 左ページ（見開きモード時のみ） */}
+                    // 画像表示
+                    <div className={`flex items-center justify-center gap-1 w-full h-full p-4 ${isSpreadMode ? 'flex-row-reverse' : ''}`}>
+                        {/* 左ページ（見開きモード時） */}
                         {isSpreadMode && currentPage + 1 < viewerData.totalImages && (
                             <div className="flex-1 h-full flex items-center justify-end">
                                 {imageUrls[currentPage + 1] ? (
                                     <img
                                         src={imageUrls[currentPage + 1]}
-                                        className="max-h-full max-w-full object-contain shadow-2xl"
+                                        className="max-h-full max-w-full object-contain"
                                         alt={`Page ${currentPage + 2}`}
+                                        draggable={false}
                                     />
                                 ) : (
-                                    <div className="w-full h-full flex items-center justify-center bg-slate-900/50 text-slate-500">
-                                        Loading...
+                                    <div className="flex items-center justify-center w-full h-full">
+                                        <div className="w-8 h-8 border-3 border-purple-500 border-t-transparent rounded-full animate-spin" />
                                     </div>
                                 )}
                             </div>
@@ -239,21 +294,46 @@ export function ViewerModal({ isOpen, onClose, workPath, title }: ViewerModalPro
 
                         {/* 現在ページ（右ページ） */}
                         <div className={`h-full flex items-center ${isSpreadMode ? 'flex-1 justify-start' : 'justify-center w-full'}`}>
-                            {imageUrls[currentPage] ? (
+                            {imageLoading && !imageUrls[currentPage] ? (
+                                // 現在ページのローディング
+                                <div className="flex flex-col items-center gap-3">
+                                    <div className="w-10 h-10 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                                    <p className="text-white/60 text-sm">
+                                        {currentImageInfo?.filename || 'Loading...'}
+                                    </p>
+                                </div>
+                            ) : imageUrls[currentPage] ? (
                                 <img
                                     src={imageUrls[currentPage]}
-                                    className="max-h-full max-w-full object-contain shadow-2xl"
+                                    className="max-h-full max-w-full object-contain"
                                     alt={`Page ${currentPage + 1}`}
+                                    draggable={false}
                                 />
                             ) : (
-                                <div className="w-full h-full flex items-center justify-center bg-slate-900/50 text-slate-500">
-                                    Loading...
+                                <div className="flex items-center justify-center w-full h-full text-white/40">
+                                    画像を読み込めませんでした
                                 </div>
                             )}
                         </div>
                     </div>
-                ) : (
-                    <p className="text-white">Failed to load images</p>
+                ) : null}
+
+                {/* ナビゲーションヒント（ホバー時） */}
+                {viewerData && overlayVisible && (
+                    <>
+                        {/* 左エリアヒント */}
+                        {currentPage > 0 && (
+                            <div className="absolute left-0 top-0 bottom-0 w-20 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                                <ChevronLeftIcon className="w-10 h-10 text-white/50" />
+                            </div>
+                        )}
+                        {/* 右エリアヒント */}
+                        {currentPage < viewerData.totalImages - 1 && (
+                            <div className="absolute right-0 top-0 bottom-0 w-20 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                                <ChevronRightIcon className="w-10 h-10 text-white/50" />
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
 
@@ -263,8 +343,15 @@ export function ViewerModal({ isOpen, onClose, workPath, title }: ViewerModalPro
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between">
-                    <h2 className="text-white font-medium truncate max-w-2xl text-shadow">{title}</h2>
-                    <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0 mr-4">
+                        <h2 className="text-white font-medium truncate">{title}</h2>
+                        {currentImageInfo && (
+                            <p className="text-white/50 text-xs truncate mt-1">
+                                {currentImageInfo.filename}
+                            </p>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
                         <Button
                             variant="ghost"
                             size="sm"
@@ -296,7 +383,7 @@ export function ViewerModal({ isOpen, onClose, workPath, title }: ViewerModalPro
                     {/* シークバー */}
                     {viewerData && (
                         <div className="flex items-center gap-4">
-                            <span className="text-white text-xs whitespace-nowrap min-w-[3rem] text-right">
+                            <span className="text-white text-sm font-mono whitespace-nowrap min-w-[4rem] text-right">
                                 {currentPage + 1}
                             </span>
                             <input
@@ -305,28 +392,28 @@ export function ViewerModal({ isOpen, onClose, workPath, title }: ViewerModalPro
                                 max={viewerData.totalImages - 1}
                                 value={currentPage}
                                 onChange={(e) => goToPage(parseInt(e.target.value))}
-                                className="w-full h-1 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-purple-500 hover:accent-purple-400"
+                                className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer accent-purple-500 hover:bg-white/30 transition-colors"
                             />
-                            <span className="text-white text-xs whitespace-nowrap min-w-[3rem]">
+                            <span className="text-white text-sm font-mono whitespace-nowrap min-w-[4rem]">
                                 {viewerData.totalImages}
                             </span>
                         </div>
                     )}
 
                     {/* コントロールボタン */}
-                    <div className="flex items-center justify-center gap-8">
+                    <div className="flex items-center justify-center gap-6">
                         <Button
                             variant="ghost"
                             size="icon"
                             onClick={prevPage}
                             disabled={!viewerData || currentPage === 0}
-                            className="text-white hover:bg-white/10 rounded-full w-12 h-12"
+                            className="text-white hover:bg-white/10 rounded-full w-12 h-12 disabled:opacity-30"
                         >
                             <ChevronLeftIcon className="w-6 h-6" />
                         </Button>
 
-                        <div className="text-slate-400 text-xs">
-                            {isSpreadMode ? "見開きモード" : "単ページモード"}
+                        <div className="text-white/60 text-sm px-4 py-1 bg-white/5 rounded-full">
+                            {isSpreadMode ? "見開き" : "単ページ"} • ← → で移動 • F で切替
                         </div>
 
                         <Button
@@ -334,7 +421,7 @@ export function ViewerModal({ isOpen, onClose, workPath, title }: ViewerModalPro
                             size="icon"
                             onClick={nextPage}
                             disabled={!viewerData || currentPage >= viewerData.totalImages - 1}
-                            className="text-white hover:bg-white/10 rounded-full w-12 h-12"
+                            className="text-white hover:bg-white/10 rounded-full w-12 h-12 disabled:opacity-30"
                         >
                             <ChevronRightIcon className="w-6 h-6" />
                         </Button>

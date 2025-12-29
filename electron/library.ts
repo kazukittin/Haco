@@ -2,7 +2,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { app } from 'electron'
 import type { LibraryData, WorkInfo, ScanResult, AppSettings } from './types'
-import { scrapeWorkInfo } from './scraper'
+import { scrapeWorkInfo, scrapeByTitleWithFallback } from './scraper'
 
 // RJコードの正規表現（RJ + 6〜8桁の数字）
 const RJ_CODE_REGEX = /RJ\d{6,8}/i
@@ -134,10 +134,31 @@ export function extractRJCode(folderName: string): string | null {
 }
 
 /**
- * 指定フォルダ内のサブフォルダをスキャン
+ * ファイル名から一意のIDを生成（RJコードがない場合用）
  */
-export function scanFolderForWorks(folderPath: string): Array<{ rjCode: string; folderPath: string }> {
-    const results: Array<{ rjCode: string; folderPath: string }> = []
+function generateWorkId(name: string): string {
+    // 拡張子を除去してプレフィックスを付ける
+    const baseName = name.replace(/\.(zip|cbz|rar)$/i, '')
+    return `LOCAL_${baseName.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50)}`
+}
+
+// サポートするアーカイブ拡張子
+const ARCHIVE_EXTENSIONS = ['.zip', '.cbz', '.rar']
+
+/**
+ * アーカイブファイルかどうかを判定
+ */
+function isArchiveFile(filename: string): boolean {
+    const ext = path.extname(filename).toLowerCase()
+    return ARCHIVE_EXTENSIONS.includes(ext)
+}
+
+/**
+ * 指定フォルダ内のサブフォルダとZIPファイルをスキャン
+ */
+export function scanFolderForWorks(folderPath: string): Array<{ rjCode: string; folderPath: string; isArchive?: boolean }> {
+    console.log(`[Library] Scanning folder: ${folderPath}`)
+    const results: Array<{ rjCode: string; folderPath: string; isArchive?: boolean }> = []
 
     try {
         if (!fs.existsSync(folderPath)) {
@@ -146,20 +167,53 @@ export function scanFolderForWorks(folderPath: string): Array<{ rjCode: string; 
         }
 
         const entries = fs.readdirSync(folderPath, { withFileTypes: true })
+        console.log(`[Library] Found ${entries.length} entries in folder`)
 
         for (const entry of entries) {
+            const fullPath = path.join(folderPath, entry.name)
+
             if (entry.isDirectory()) {
+                // フォルダの場合
+                const rjCode = extractRJCode(entry.name)
+                if (rjCode) {
+                    // RJコードがある場合
+                    results.push({
+                        rjCode,
+                        folderPath: fullPath,
+                    })
+                } else {
+                    // RJコードがない場合も登録（ファイル名ベースのID）
+                    results.push({
+                        rjCode: generateWorkId(entry.name),
+                        folderPath: fullPath,
+                    })
+                }
+            } else if (entry.isFile() && isArchiveFile(entry.name)) {
+                // ZIPファイルの場合
+                console.log(`[Library] Found archive: ${entry.name}`)
                 const rjCode = extractRJCode(entry.name)
                 if (rjCode) {
                     results.push({
                         rjCode,
-                        folderPath: path.join(folderPath, entry.name),
+                        folderPath: fullPath,
+                        isArchive: true,
+                    })
+                } else {
+                    // RJコードがない場合も登録
+                    const workId = generateWorkId(entry.name)
+                    console.log(`[Library] Registering with ID: ${workId}`)
+                    results.push({
+                        rjCode: workId,
+                        folderPath: fullPath,
+                        isArchive: true,
                     })
                 }
+            } else {
+                console.log(`[Library] Skipping: ${entry.name} (isFile: ${entry.isFile()}, isArchive: ${isArchiveFile(entry.name)})`)
             }
         }
 
-        console.log(`[Library] Found ${results.length} works with RJ codes in ${folderPath}`)
+        console.log(`[Library] Found ${results.length} works (folders + archives) in ${folderPath}`)
     } catch (error) {
         console.error(`[Library] Error scanning folder ${folderPath}:`, error)
     }
@@ -195,7 +249,7 @@ export async function scanAndUpdateLibrary(
     result.totalFolders = foundWorks.length
 
     if (foundWorks.length === 0) {
-        result.errors.push('RJコードを含むフォルダが見つかりませんでした')
+        result.errors.push('作品（フォルダまたはZIPファイル）が見つかりませんでした')
         saveLibraryData(libraryData)
         return result
     }
@@ -214,15 +268,83 @@ export async function scanAndUpdateLibrary(
     // 設定を読み込んでディレイを取得
     const settings = loadSettings()
 
-    // 新しい作品をスクレイピング
+    // 新しい作品を処理
     for (let i = 0; i < newWorks.length; i++) {
-        const { rjCode, folderPath } = newWorks[i]
+        const { rjCode, folderPath, isArchive } = newWorks[i]
+
+        // ファイル名からタイトルを生成（拡張子を除去）
+        const baseName = path.basename(folderPath)
+        const titleFromFile = baseName.replace(/\.(zip|cbz|rar)$/i, '')
 
         if (onProgress) {
-            onProgress(i + 1, newWorks.length, rjCode, 'スクレイピング中...')
+            onProgress(i + 1, newWorks.length, rjCode, '処理中...')
         }
 
+        // LOCAL_ プレフィックスの場合（RJコードなし）
+        // タイトルでスクレイピングを試行
+        if (rjCode.startsWith('LOCAL_')) {
+            console.log(`[Library] Processing local work: ${titleFromFile}`)
+
+            if (onProgress) {
+                onProgress(i + 1, newWorks.length, titleFromFile, 'タイトルで検索中...')
+            }
+
+            try {
+                // DLsite → Google Books の順で検索
+                const workInfo = await scrapeByTitleWithFallback(titleFromFile, folderPath, rjCode)
+
+                if (workInfo) {
+                    libraryData.works[rjCode] = workInfo
+                    result.success++
+                    result.newWorks.push(rjCode)
+                    console.log(`[Library] Found info for: ${titleFromFile}`)
+                } else {
+                    // 見つからなかった場合はフォールバック
+                    libraryData.works[rjCode] = {
+                        rjCode,
+                        title: titleFromFile,
+                        circle: 'ローカル作品',
+                        authors: [],
+                        tags: ['ローカル'],
+                        description: 'オンラインで情報が見つかりませんでした。',
+                        thumbnailUrl: '',
+                        localPath: folderPath,
+                        fetchedAt: new Date().toISOString(),
+                    }
+                    result.success++
+                    result.newWorks.push(rjCode)
+                    result.errors.push(`${titleFromFile}: オンラインで情報が見つかりませんでした`)
+                }
+            } catch (error) {
+                console.error(`[Library] Error searching for ${titleFromFile}:`, error)
+                libraryData.works[rjCode] = {
+                    rjCode,
+                    title: titleFromFile,
+                    circle: 'ローカル作品',
+                    authors: [],
+                    tags: ['ローカル'],
+                    description: '検索中にエラーが発生しました。',
+                    thumbnailUrl: '',
+                    localPath: folderPath,
+                    fetchedAt: new Date().toISOString(),
+                }
+                result.success++
+                result.newWorks.push(rjCode)
+            }
+
+            // レート制限対策のディレイ
+            if (i < newWorks.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, settings.requestDelay))
+            }
+            continue
+        }
+
+        // RJコードがある場合はスクレイピングを試行
         try {
+            if (onProgress) {
+                onProgress(i + 1, newWorks.length, rjCode, 'スクレイピング中...')
+            }
+
             const workInfo = await scrapeWorkInfo(rjCode, folderPath)
 
             if (workInfo) {
@@ -233,7 +355,7 @@ export async function scanAndUpdateLibrary(
                 // スクレイピング失敗時のフォールバック
                 libraryData.works[rjCode] = {
                     rjCode,
-                    title: path.basename(folderPath),
+                    title: titleFromFile,
                     circle: '未取得',
                     authors: [],
                     tags: ['未取得'],
@@ -252,7 +374,7 @@ export async function scanAndUpdateLibrary(
 
             libraryData.works[rjCode] = {
                 rjCode,
-                title: path.basename(folderPath),
+                title: titleFromFile,
                 circle: 'エラー',
                 authors: [],
                 tags: ['エラー'],
@@ -266,8 +388,8 @@ export async function scanAndUpdateLibrary(
             result.errors.push(`${rjCode}: エラーにより仮登録しました`)
         }
 
-        // レート制限対策のディレイ
-        if (i < newWorks.length - 1) {
+        // レート制限対策のディレイ（RJコードがある場合のみ）
+        if (i < newWorks.length - 1 && !rjCode.startsWith('LOCAL_')) {
             await new Promise(resolve => setTimeout(resolve, settings.requestDelay))
         }
     }

@@ -95,6 +95,8 @@ interface ElectronAPI {
     // ビューア操作
     getViewerData: (workPath: string) => Promise<ViewerData | null>
     getImageData: (sourceType: 'folder' | 'zip', source: string, archivePath?: string) => Promise<string | null>
+    getImagesList: (workPath: string) => Promise<{ images: string[]; sourceType: 'folder' | 'zip'; archivePath?: string; totalImages: number } | null>
+    getImageDataByFilename: (workPath: string, filename: string) => Promise<string | null>
 
     // 設定
     getSettings: () => Promise<AppSettings>

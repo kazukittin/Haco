@@ -1,4 +1,4 @@
-import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { ipcMain, dialog, BrowserWindow, app } from 'electron'
 import {
     loadLibraryData,
     saveLibraryData,
@@ -10,6 +10,7 @@ import {
     getAllTags,
     getAllCircles,
 } from './library'
+import { getViewerData, getImageData } from './viewer'
 import type { AppSettings, LibraryData } from './types'
 
 /**
@@ -114,16 +115,40 @@ export function registerIPCHandlers(): void {
     // ビューア関連
     // ========================================
 
-    // ビューアデータを取得
+    // ビューアデータを取得（既存API）
     ipcMain.handle('viewer:getData', (_event, workPath: string) => {
-        const { getViewerData } = require('./viewer')
         return getViewerData(workPath)
     })
 
-    // 画像データを取得
+    // 画像データを取得（既存API）
     ipcMain.handle('viewer:getImage', (_event, sourceType: 'folder' | 'zip', source: string, archivePath?: string) => {
-        const { getImageData } = require('./viewer')
         return getImageData(sourceType, source, archivePath)
+    })
+
+    // 画像リストを取得（新API: viewer:get-images）
+    // 作品パスを受け取り、画像ファイル名のリストを自然順ソートで返す
+    ipcMain.handle('viewer:get-images', (_event, workPath: string) => {
+        const data = getViewerData(workPath)
+        if (!data) return null
+        return {
+            images: data.images.map((img: any) => img.filename),
+            sourceType: data.sourceType,
+            archivePath: data.archivePath,
+            totalImages: data.totalImages,
+        }
+    })
+
+    // 画像データをBase64で取得（新API: viewer:get-image-data）
+    // 作品パスとファイル名を受け取り、Base64データを返す
+    ipcMain.handle('viewer:get-image-data', (_event, workPath: string, filename: string) => {
+        const data = getViewerData(workPath)
+        if (!data) return null
+
+        // ファイル名から対応するImageInfoを探す
+        const imageInfo = data.images.find((img: any) => img.filename === filename)
+        if (!imageInfo) return null
+
+        return getImageData(imageInfo.sourceType, imageInfo.source, data.archivePath)
     })
 
     // ========================================
@@ -132,7 +157,6 @@ export function registerIPCHandlers(): void {
 
     // アプリのデータフォルダパスを取得
     ipcMain.handle('app:getUserDataPath', () => {
-        const { app } = require('electron')
         return app.getPath('userData')
     })
 

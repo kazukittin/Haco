@@ -92,14 +92,24 @@ const electronAPI = {
     // ビューア関連
     // ========================================
 
-    /** ビューアデータを取得 */
+    /** ビューアデータを取得（既存API） */
     getViewerData: (workPath: string) => {
         return ipcRenderer.invoke('viewer:getData', workPath)
     },
 
-    /** 画像データを取得 */
+    /** 画像データを取得（既存API） */
     getImageData: (sourceType: 'folder' | 'zip', source: string, archivePath?: string) => {
         return ipcRenderer.invoke('viewer:getImage', sourceType, source, archivePath)
+    },
+
+    /** 画像リストを取得（新API） */
+    getImagesList: (workPath: string) => {
+        return ipcRenderer.invoke('viewer:get-images', workPath)
+    },
+
+    /** 画像データをBase64で取得（新API） */
+    getImageDataByFilename: (workPath: string, filename: string) => {
+        return ipcRenderer.invoke('viewer:get-image-data', workPath, filename)
     },
 
     // ========================================
