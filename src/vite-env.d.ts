@@ -17,6 +17,10 @@ export interface WorkInfo {
     ageRating?: string
     workType?: string
     isHidden?: boolean
+    lastReadAt?: string
+    lastReadPage?: number
+    totalPages?: number
+    sampleImages?: string[]
 }
 
 export interface LibraryData {
@@ -95,7 +99,12 @@ interface ElectronAPI {
     toggleWorkVisibility: (rjCode: string) => Promise<boolean>
     deleteWorkWithFiles: (rjCode: string) => Promise<{ success: boolean; error?: string }>
     cleanupMissingWorks: () => Promise<{ removed: string[]; errors: string[] }>
+    updateReadingProgress: (rjCode: string, currentPage: number, totalPages: number) => Promise<boolean>
+    getRecentlyReadWorks: (limit?: number) => Promise<WorkInfo[]>
     onScanProgress: (callback: (data: ScanProgress) => void) => () => void
+    onLibraryUpdated: (callback: () => void) => () => void
+    isScanning: () => Promise<boolean>
+    onScanStateChanged: (callback: (isScanning: boolean) => void) => () => void
 
     // ビューア操作
     getViewerData: (workPath: string) => Promise<ViewerData | null>

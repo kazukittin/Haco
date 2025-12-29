@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
     FolderIcon,
     RefreshIcon,
@@ -22,25 +21,32 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
     const [scanResult, setScanResult] = useState<ScanResult | null>(null)
     const [currentScanPath, setCurrentScanPath] = useState<string>('')
 
-    // 設定を読み込む
+    // 設定とスキャン状態を読み込む
     useEffect(() => {
         window.electronAPI.getSettings().then(setSettings)
+        window.electronAPI.isScanning().then(setIsScanning)
+
+        const cleanup = window.electronAPI.onScanStateChanged((state) => {
+            setIsScanning(state)
+        })
+
+        return cleanup
     }, [])
 
     // スキャン進行状況のリスナー
     useEffect(() => {
-        if (isScanning) {
-            const cleanup = window.electronAPI.onScanProgress((data) => {
-                setScanProgress(data)
-            })
-            return cleanup
-        }
-    }, [isScanning])
+        const cleanup = window.electronAPI.onScanProgress((data) => {
+            setScanProgress(data)
+        })
+        return cleanup
+    }, [])
 
     // フォルダを追加
     const handleAddFolder = async () => {
+        if (isScanning || !settings) return
+
         const path = await window.electronAPI.selectFolder()
-        if (path && settings) {
+        if (path) {
             // 重複チェック
             if (!settings.libraryPaths.includes(path)) {
                 const newSettings = {
@@ -50,17 +56,28 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
                 await window.electronAPI.saveSettings(newSettings)
                 setSettings(newSettings)
 
-                // 追加したフォルダをすぐにスキャンするか確認してもいいが、
-                // ここではユーザーが明示的に「更新」ボタンを押す運用にする
+                // 追加したフォルダをすぐにスキャン
+                setIsScanning(true)
+                setScanResult(null)
+                setCurrentScanPath(path)
+                try {
+                    const result = await window.electronAPI.scanLibrary(path)
+                    setScanResult(result)
+                    onScanComplete()
+                } catch (error) {
+                    console.error('Scan error:', error)
+                } finally {
+                    setIsScanning(false)
+                    setCurrentScanPath('')
+                }
             }
         }
     }
 
     // フォルダを削除
     const handleRemoveFolder = async (pathToRemove: string) => {
-        if (!settings) return
+        if (isScanning || !settings) return
 
-        // 確認ダイアログなどは省略（即削除）
         const newSettings = {
             ...settings,
             libraryPaths: settings.libraryPaths.filter(p => p !== pathToRemove)
@@ -71,7 +88,7 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
 
     // ライブラリ更新（全フォルダスキャン）
     const handleUpdateLibrary = async () => {
-        if (!settings || settings.libraryPaths.length === 0) return
+        if (isScanning || !settings || settings.libraryPaths.length === 0) return
 
         setIsScanning(true)
         setScanResult(null)
@@ -153,7 +170,8 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
                                 <Button
                                     size="sm"
                                     onClick={handleAddFolder}
-                                    className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20"
+                                    disabled={isScanning}
+                                    className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     <FolderIcon className="w-4 h-4 mr-2" />
                                     フォルダを追加
@@ -179,7 +197,8 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
                                                 variant="ghost"
                                                 size="sm"
                                                 onClick={() => handleRemoveFolder(path)}
-                                                className="text-slate-500 hover:text-red-400 hover:bg-red-400/10"
+                                                disabled={isScanning}
+                                                className="text-slate-500 hover:text-red-400 hover:bg-red-400/10 disabled:opacity-30 disabled:cursor-not-allowed"
                                             >
                                                 <XIcon className="w-4 h-4" />
                                             </Button>
@@ -246,16 +265,70 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
                         </div>
                     </section>
 
-                    {/* その他の設定（プレースホルダー） */}
-                    <section className="space-y-4 pt-4 border-t border-white/5 opacity-50 pointer-events-none">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h2 className="text-xl font-bold mb-1">一般設定</h2>
-                                <p className="text-sm text-slate-400">アプリケーションの表示や動作を設定します（未実装）。</p>
+                    {/* 自動スキャン・動作設定セクション */}
+                    <section className="space-y-4 pt-4 border-t border-white/5">
+                        <div>
+                            <h2 className="text-xl font-bold mb-1">動作設定</h2>
+                            <p className="text-sm text-slate-400">ライブラリの同期方法や挙動を設定します。</p>
+                        </div>
+
+                        <div className={`bg-slate-900/50 border border-white/10 rounded-xl divide-y divide-white/5 transition-opacity ${isScanning ? 'opacity-50 pointer-events-none' : ''}`}>
+                            {/* 自動スキャン */}
+                            <div className="p-6 flex items-center justify-between">
+                                <div>
+                                    <h3 className="font-medium text-slate-200 mb-1">リアルタイム・フォルダ監視</h3>
+                                    <p className="text-sm text-slate-400">フォルダ内の変更を検知して自動的にライブラリを更新します。</p>
+                                </div>
+                                <div
+                                    className={`w-12 h-6 rounded-full relative cursor-pointer transition-colors duration-200 ${settings.autoScan ? 'bg-purple-600' : 'bg-slate-700'}`}
+                                    onClick={async () => {
+                                        if (isScanning) return
+                                        const newSettings = { ...settings, autoScan: !settings.autoScan }
+                                        await window.electronAPI.saveSettings(newSettings)
+                                        setSettings(newSettings)
+                                    }}
+                                >
+                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-200 ${settings.autoScan ? 'left-7' : 'left-1'}`} />
+                                </div>
+                            </div>
+
+                            {/* リクエスト間隔 */}
+                            <div className="p-6 space-y-4">
+                                <div className="flex justify-between items-center">
+                                    <div>
+                                        <h3 className="font-medium text-slate-200 mb-1">スクレイピング間隔</h3>
+                                        <p className="text-sm text-slate-400">作品情報を取得する際の間隔（ミリ秒）。サーバー負荷を考慮して設定してください。</p>
+                                    </div>
+                                    <span className="text-sm font-mono text-purple-400">{settings.requestDelay}ms</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="500"
+                                    max="5000"
+                                    step="100"
+                                    value={settings.requestDelay}
+                                    disabled={isScanning}
+                                    onChange={async (e) => {
+                                        const val = parseInt(e.target.value)
+                                        const newSettings = { ...settings, requestDelay: val }
+                                        setSettings(newSettings)
+                                    }}
+                                    onMouseUp={async () => {
+                                        if (settings && !isScanning) {
+                                            await window.electronAPI.saveSettings(settings)
+                                        }
+                                    }}
+                                    className="w-full h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer accent-purple-500 disabled:accent-slate-500"
+                                />
+                                <div className="flex justify-between text-xs text-slate-500">
+                                    <span>速い (500ms)</span>
+                                    <span>遅い (5000ms)</span>
+                                </div>
                             </div>
                         </div>
-                        {/* テーマ設定など */}
                     </section>
+
+                    {/* 一般設定（プレースホルダー） */}
                 </div>
             </div>
         </div>

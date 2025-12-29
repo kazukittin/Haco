@@ -214,6 +214,38 @@ export function WorkDetailModal({ work, onClose, onTagClick, onPlay, onRefresh }
                             </div>
                         )}
 
+                        {/* サンプル画像ギャラリー */}
+                        {work.sampleImages && work.sampleImages.length > 0 && (
+                            <div className="mb-4">
+                                <p className="text-xs text-slate-500 mb-2">サンプル画像</p>
+                                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                                    {work.sampleImages.map((imageUrl, index) => (
+                                        <a
+                                            key={index}
+                                            href={imageUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex-shrink-0 group"
+                                        >
+                                            <div className="w-24 h-32 relative rounded-lg overflow-hidden bg-slate-800 ring-1 ring-white/10 group-hover:ring-purple-500/50 transition-all">
+                                                <img
+                                                    src={imageUrl}
+                                                    alt={`サンプル ${index + 1}`}
+                                                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                                                    loading="lazy"
+                                                />
+                                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                                    <span className="text-white/0 group-hover:text-white/80 text-xs font-medium transition-colors">
+                                                        拡大
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </a>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         {/* アクションボタン */}
                         <div className="flex gap-3 mt-6">
                             <Button
@@ -271,6 +303,6 @@ export function WorkDetailModal({ work, onClose, onTagClick, onPlay, onRefresh }
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     )
 }

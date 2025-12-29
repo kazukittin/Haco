@@ -23,6 +23,10 @@ function App() {
     const [selectedCircle, setSelectedCircle] = useState('')
     const [selectedWorkType, setSelectedWorkType] = useState('')
 
+    // ソート状態
+    type SortOption = 'title' | 'releaseDate' | 'addedDate' | 'lastRead' | 'circle'
+    const [sortOption, setSortOption] = useState<SortOption>('addedDate')
+
     // モーダル状態
     const [selectedWork, setSelectedWork] = useState<WorkInfo | null>(null)
 
@@ -45,9 +49,16 @@ function App() {
         }
     }, [])
 
-    // 初回読み込み
+    // 初回読み込みと更新イベントのリッスン
     useEffect(() => {
         loadLibraryData()
+
+        const cleanup = window.electronAPI.onLibraryUpdated(() => {
+            console.log('[App] Library update detected, reloading...')
+            loadLibraryData()
+        })
+
+        return cleanup
     }, [loadLibraryData])
 
     // 全作品リスト
@@ -55,6 +66,18 @@ function App() {
         if (!libraryData) return []
         return Object.values(libraryData.works)
     }, [libraryData])
+
+    // 最近読んだ作品（上位5件）
+    const recentlyReadWorks = useMemo(() => {
+        return allWorks
+            .filter(work => work.lastReadAt && !work.isHidden)
+            .sort((a, b) => {
+                const dateA = new Date(a.lastReadAt || 0).getTime()
+                const dateB = new Date(b.lastReadAt || 0).getTime()
+                return dateB - dateA
+            })
+            .slice(0, 5)
+    }, [allWorks])
 
     // タグ一覧（使用頻度順）
     const tags: TagCount[] = useMemo(() => {
@@ -130,8 +153,33 @@ function App() {
             works = works.filter((work) => (work.workType || 'その他') === selectedWorkType)
         }
 
+        // ソート
+        works = [...works].sort((a, b) => {
+            switch (sortOption) {
+                case 'title':
+                    return a.title.localeCompare(b.title, 'ja')
+                case 'releaseDate':
+                    // 発売日が新しい順
+                    const dateA = a.releaseDate || ''
+                    const dateB = b.releaseDate || ''
+                    return dateB.localeCompare(dateA)
+                case 'addedDate':
+                    // 追加日が新しい順
+                    return new Date(b.fetchedAt).getTime() - new Date(a.fetchedAt).getTime()
+                case 'lastRead':
+                    // 最後に読んだ日が新しい順
+                    const lastA = a.lastReadAt ? new Date(a.lastReadAt).getTime() : 0
+                    const lastB = b.lastReadAt ? new Date(b.lastReadAt).getTime() : 0
+                    return lastB - lastA
+                case 'circle':
+                    return a.circle.localeCompare(b.circle, 'ja')
+                default:
+                    return 0
+            }
+        })
+
         return works
-    }, [allWorks, searchQuery, selectedTags, selectedCircle, selectedWorkType])
+    }, [allWorks, searchQuery, selectedTags, selectedCircle, selectedWorkType, sortOption])
 
     // タグ選択/解除
     const handleTagToggle = useCallback((tag: string) => {
@@ -270,7 +318,24 @@ function App() {
                     </div>
 
                     {/* ヘッダー右側のアクション */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-3">
+                        {/* ソートセレクタ */}
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-500">並び替え:</span>
+                            <select
+                                value={sortOption}
+                                onChange={(e) => setSortOption(e.target.value as typeof sortOption)}
+                                className="bg-slate-800/50 border border-white/10 rounded-md px-2 py-1 text-sm text-slate-300 focus:outline-none focus:border-purple-500/50 cursor-pointer"
+                            >
+                                <option value="addedDate">追加日（新しい順）</option>
+                                <option value="lastRead">最近読んだ順</option>
+                                <option value="releaseDate">発売日順</option>
+                                <option value="title">タイトル順</option>
+                                <option value="circle">サークル順</option>
+                            </select>
+                        </div>
+
+                        <div className="w-px h-6 bg-white/10" />
                         <Button
                             variant="ghost"
                             size="sm"
@@ -293,12 +358,65 @@ function App() {
                     </div>
                 </header>
 
-                {/* 作品グリッド */}
-                <WorkGrid
-                    works={filteredWorks}
-                    onWorkClick={handleWorkClick}
-                    isLoading={isLoading}
-                />
+                {/* コンテンツエリア */}
+                <div className="flex-1 overflow-y-auto">
+                    {/* 最近読んだ作品（フィルター未適用時のみ表示） */}
+                    {recentlyReadWorks.length > 0 && !searchQuery && selectedTags.length === 0 && !selectedCircle && !selectedWorkType && (
+                        <section className="p-6 border-b border-white/5">
+                            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                                <span className="w-1 h-5 bg-purple-500 rounded-full"></span>
+                                続きから読む
+                            </h3>
+                            <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                                {recentlyReadWorks.map((work) => (
+                                    <div
+                                        key={work.rjCode}
+                                        className="flex-shrink-0 w-36 group cursor-pointer"
+                                        onClick={() => handleWorkClick(work)}
+                                    >
+                                        <div className="aspect-[3/4] relative rounded-lg overflow-hidden bg-slate-800 mb-2 ring-2 ring-purple-500/30 group-hover:ring-purple-500/60 transition-all">
+                                            {work.thumbnailUrl ? (
+                                                <img
+                                                    src={work.thumbnailUrl}
+                                                    alt={work.title}
+                                                    className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                                                />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-3xl font-bold text-white/20">
+                                                    {work.title.charAt(0)}
+                                                </div>
+                                            )}
+                                            {/* 進捗バー */}
+                                            {work.totalPages && work.lastReadPage !== undefined && (
+                                                <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
+                                                    <div
+                                                        className="h-full bg-purple-500"
+                                                        style={{ width: `${((work.lastReadPage + 1) / work.totalPages) * 100}%` }}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-slate-300 truncate group-hover:text-white transition-colors">
+                                            {work.title}
+                                        </p>
+                                        {work.totalPages && work.lastReadPage !== undefined && (
+                                            <p className="text-xs text-slate-500">
+                                                {work.lastReadPage + 1} / {work.totalPages} ページ
+                                            </p>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {/* 作品グリッド */}
+                    <WorkGrid
+                        works={filteredWorks}
+                        onWorkClick={handleWorkClick}
+                        isLoading={isLoading}
+                    />
+                </div>
             </main>
 
             {/* 作品詳細モーダル */}
@@ -317,6 +435,8 @@ function App() {
                     onClose={() => setViewerWork(null)}
                     workPath={viewerWork.localPath}
                     title={viewerWork.title}
+                    rjCode={viewerWork.rjCode}
+                    initialPage={viewerWork.lastReadPage || 0}
                 />
             )}
 

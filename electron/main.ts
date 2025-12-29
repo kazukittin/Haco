@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from 'electron'
 import path from 'path'
 import { registerIPCHandlers } from './ipc-handlers'
+import { setupFolderWatcher } from './library'
 
 function createWindow() {
     const mainWindow = new BrowserWindow({
@@ -27,6 +28,9 @@ function createWindow() {
 app.whenReady().then(() => {
     // IPCハンドラーを登録
     registerIPCHandlers()
+
+    // フォルダ監視を開始
+    setupFolderWatcher()
 
     createWindow()
 

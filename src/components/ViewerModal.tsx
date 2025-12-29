@@ -14,11 +14,13 @@ interface ViewerModalProps {
     onClose: () => void
     workPath: string
     title: string
+    rjCode: string
+    initialPage?: number
 }
 
-export function ViewerModal({ isOpen, onClose, workPath, title }: ViewerModalProps) {
+export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialPage = 0 }: ViewerModalProps) {
     const [viewerData, setViewerData] = useState<ViewerData | null>(null)
-    const [currentPage, setCurrentPage] = useState(0)
+    const [currentPage, setCurrentPage] = useState(initialPage)
     const [initialLoading, setInitialLoading] = useState(true)
     const [imageLoading, setImageLoading] = useState(false)
     const [imageUrls, setImageUrls] = useState<Record<number, string>>({})
@@ -30,6 +32,19 @@ export function ViewerModal({ isOpen, onClose, workPath, title }: ViewerModalPro
     const overlayTimerRef = useRef<NodeJS.Timeout | null>(null)
     const containerRef = useRef<HTMLDivElement>(null)
 
+    // 進捗保存用のデバウンスタイマー
+    const progressSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+    // 進捗を保存する関数（デバウンス付き）
+    const saveProgress = useCallback((page: number, total: number) => {
+        if (progressSaveTimerRef.current) {
+            clearTimeout(progressSaveTimerRef.current)
+        }
+        progressSaveTimerRef.current = setTimeout(() => {
+            window.electronAPI.updateReadingProgress(rjCode, page, total)
+        }, 1000) // 1秒のデバウンス
+    }, [rjCode])
+
     // ビューアデータを読み込む
     useEffect(() => {
         if (isOpen && workPath) {
@@ -40,7 +55,9 @@ export function ViewerModal({ isOpen, onClose, workPath, title }: ViewerModalPro
                 .then(data => {
                     if (data && data.totalImages > 0) {
                         setViewerData(data)
-                        setCurrentPage(0)
+                        // 初期ページを設定（前回の続きから）
+                        const startPage = Math.min(initialPage, data.totalImages - 1)
+                        setCurrentPage(startPage)
                         setImageUrls({})
                     } else {
                         setError('画像が見つかりませんでした')
@@ -151,21 +168,24 @@ export function ViewerModal({ isOpen, onClose, workPath, title }: ViewerModalPro
         if (!viewerData) return
         const newPage = Math.max(0, Math.min(page, viewerData.totalImages - 1))
         setCurrentPage(newPage)
-    }, [viewerData])
+        saveProgress(newPage, viewerData.totalImages)
+    }, [viewerData, saveProgress])
 
     const nextPage = useCallback(() => {
         if (!viewerData) return
         const increment = isSpreadMode ? 2 : 1
         const newPage = Math.min(currentPage + increment, viewerData.totalImages - 1)
         setCurrentPage(newPage)
-    }, [currentPage, isSpreadMode, viewerData])
+        saveProgress(newPage, viewerData.totalImages)
+    }, [currentPage, isSpreadMode, viewerData, saveProgress])
 
     const prevPage = useCallback(() => {
         if (!viewerData) return
         const increment = isSpreadMode ? 2 : 1
         const newPage = Math.max(currentPage - increment, 0)
         setCurrentPage(newPage)
-    }, [currentPage, isSpreadMode, viewerData])
+        saveProgress(newPage, viewerData.totalImages)
+    }, [currentPage, isSpreadMode, viewerData, saveProgress])
 
     // 画面クリックでページ送り（左右エリア判定）
     const handleImageAreaClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {

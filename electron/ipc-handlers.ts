@@ -13,6 +13,10 @@ import {
     removeWorkFromLibrary,
     deleteWorkWithFiles,
     cleanupMissingWorks,
+    updateReadingProgress,
+    getRecentlyReadWorks,
+    setupFolderWatcher,
+    isScanning,
 } from './library'
 import { getViewerData, getImageData } from './viewer'
 import type { AppSettings, LibraryData } from './types'
@@ -49,6 +53,11 @@ export function registerIPCHandlers(): void {
     // ライブラリデータを保存
     ipcMain.handle('library:saveData', (_event, data: LibraryData) => {
         return saveLibraryData(data)
+    })
+
+    // スキャン中か確認
+    ipcMain.handle('library:isScanning', () => {
+        return isScanning()
     })
 
     // ライブラリをスキャン
@@ -116,6 +125,16 @@ export function registerIPCHandlers(): void {
         return cleanupMissingWorks()
     })
 
+    // 読書進捗を更新
+    ipcMain.handle('library:updateReadingProgress', (_event, rjCode: string, currentPage: number, totalPages: number) => {
+        return updateReadingProgress(rjCode, currentPage, totalPages)
+    })
+
+    // 最近読んだ作品を取得
+    ipcMain.handle('library:getRecentlyRead', (_event, limit?: number) => {
+        return getRecentlyReadWorks(limit)
+    })
+
     // ========================================
     // 設定関連
     // ========================================
@@ -127,7 +146,12 @@ export function registerIPCHandlers(): void {
 
     // 設定を保存
     ipcMain.handle('settings:save', (_event, settings: AppSettings) => {
-        return saveSettings(settings)
+        const success = saveSettings(settings)
+        if (success) {
+            // 監視設定を更新
+            setupFolderWatcher()
+        }
+        return success
     })
 
     // ========================================

@@ -28,6 +28,14 @@ export interface WorkInfo {
     workType?: string
     /** 非表示フラグ */
     isHidden?: boolean
+    /** 最後に読んだ日時 */
+    lastReadAt?: string
+    /** 最後に読んだページ（0始まり） */
+    lastReadPage?: number
+    /** 総ページ数 */
+    totalPages?: number
+    /** サンプル画像URL一覧 */
+    sampleImages?: string[]
 }
 
 /**

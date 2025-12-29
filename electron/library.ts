@@ -1,8 +1,21 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import { app } from 'electron'
+import { app, webContents } from 'electron'
+import * as chokidar from 'chokidar'
 import type { LibraryData, WorkInfo, ScanResult, AppSettings } from './types'
 import { scrapeWorkInfo, scrapeByTitleWithFallback } from './scraper'
+
+// 監視インスタンスの保持
+let watcher: chokidar.FSWatcher | null = null
+let scanTimer: NodeJS.Timeout | null = null
+let isScanningGlobal = false
+
+/**
+ * 現在スキャン中かどうかを取得
+ */
+export function isScanning(): boolean {
+    return isScanningGlobal
+}
 
 // RJコードの正規表現（RJ + 6〜8桁の数字）
 const RJ_CODE_REGEX = /RJ\d{6,8}/i
@@ -244,176 +257,204 @@ export async function scanAndUpdateLibrary(
     scanPath: string,
     onProgress?: (current: number, total: number, rjCode: string, status: string) => void
 ): Promise<ScanResult> {
-    const result: ScanResult = {
-        success: 0,
-        failed: 0,
-        totalFolders: 0,
-        newWorks: [],
-        errors: [],
+    if (isScanningGlobal) {
+        console.warn('[Library] Scan already in progress, skipping...')
+        return { success: 0, failed: 0, totalFolders: 0, newWorks: [], errors: ['Already scanning'] }
     }
 
-    // 現在のライブラリデータを読み込む
-    const libraryData = loadLibraryData()
+    try {
+        isScanningGlobal = true
+        // 状態変更を通知
+        webContents.getAllWebContents().forEach(wc => {
+            wc.send('library:scanStateChanged', true)
+        })
 
-    // スキャンパスを追加
-    if (!libraryData.scanPaths.includes(scanPath)) {
-        libraryData.scanPaths.push(scanPath)
-    }
-
-    // フォルダをスキャン
-    const foundWorks = scanFolderForWorks(scanPath)
-    result.totalFolders = foundWorks.length
-
-    if (foundWorks.length === 0) {
-        result.errors.push('作品（フォルダまたはZIPファイル）が見つかりませんでした')
-        saveLibraryData(libraryData)
-        return result
-    }
-
-    // 既存のデータにない作品をフィルタリング
-    const newWorks = foundWorks.filter(w => !libraryData.works[w.rjCode])
-    const existingWorks = foundWorks.filter(w => libraryData.works[w.rjCode])
-
-    // 既存作品のパスを更新
-    for (const work of existingWorks) {
-        libraryData.works[work.rjCode].localPath = work.folderPath
-    }
-
-    console.log(`[Library] New works to scrape: ${newWorks.length}, Existing: ${existingWorks.length}`)
-
-    // 設定を読み込んでディレイを取得
-    const settings = loadSettings()
-
-    // 新しい作品を処理
-    for (let i = 0; i < newWorks.length; i++) {
-        const { rjCode, folderPath, isArchive } = newWorks[i]
-
-        // ファイル名からタイトルを生成（拡張子を除去）
-        const baseName = path.basename(folderPath)
-        const titleFromFile = baseName.replace(/\.(zip|cbz|rar)$/i, '')
-
-        if (onProgress) {
-            onProgress(i + 1, newWorks.length, rjCode, '処理中...')
+        const result: ScanResult = {
+            success: 0,
+            failed: 0,
+            totalFolders: 0,
+            newWorks: [],
+            errors: [],
         }
 
-        // LOCAL_ プレフィックスの場合（RJコードなし）
-        // タイトルでスクレイピングを試行
-        if (rjCode.startsWith('LOCAL_')) {
-            console.log(`[Library] Processing local work: ${titleFromFile}`)
+        // 現在のライブラリデータを読み込む
+        const libraryData = loadLibraryData()
+
+        // スキャンパスを追加
+        if (!libraryData.scanPaths.includes(scanPath)) {
+            libraryData.scanPaths.push(scanPath)
+        }
+
+        // フォルダをスキャン
+        const foundWorks = scanFolderForWorks(scanPath)
+        result.totalFolders = foundWorks.length
+
+        if (foundWorks.length === 0) {
+            result.errors.push('作品（フォルダまたはZIPファイル）が見つかりませんでした')
+            saveLibraryData(libraryData)
+            return result
+        }
+
+        // 既存のデータにない作品をフィルタリング
+        const newWorks = foundWorks.filter(w => !libraryData.works[w.rjCode])
+        const existingWorks = foundWorks.filter(w => libraryData.works[w.rjCode])
+
+        // 既存作品のパスを更新
+        for (const work of existingWorks) {
+            libraryData.works[work.rjCode].localPath = work.folderPath
+        }
+
+        console.log(`[Library] New works to scrape: ${newWorks.length}, Existing: ${existingWorks.length}`)
+
+        // 設定を読み込んでディレイを取得
+        const settings = loadSettings()
+
+        // 新しい作品を処理
+        for (let i = 0; i < newWorks.length; i++) {
+            const { rjCode, folderPath, isArchive } = newWorks[i]
+
+            // ファイル名からタイトルを生成（拡張子を除去）
+            const baseName = path.basename(folderPath)
+            const titleFromFile = baseName.replace(/\.(zip|cbz|rar)$/i, '')
 
             if (onProgress) {
-                onProgress(i + 1, newWorks.length, titleFromFile, 'タイトルで検索中...')
+                onProgress(i + 1, newWorks.length, rjCode, '処理中...')
             }
 
-            try {
-                // DLsite → Google Books の順で検索
-                const workInfo = await scrapeByTitleWithFallback(titleFromFile, folderPath, rjCode)
+            // LOCAL_ プレフィックスの場合（RJコードなし）
+            // タイトルでスクレイピングを試行
+            if (rjCode.startsWith('LOCAL_')) {
+                console.log(`[Library] Processing local work: ${titleFromFile}`)
 
-                if (workInfo) {
-                    libraryData.works[rjCode] = workInfo
-                    result.success++
-                    result.newWorks.push(rjCode)
-                    console.log(`[Library] Found info for: ${titleFromFile}`)
-                } else {
-                    // 見つからなかった場合はフォールバック
+                if (onProgress) {
+                    onProgress(i + 1, newWorks.length, titleFromFile, 'タイトルで検索中...')
+                }
+
+                try {
+                    // DLsite → Google Books の順で検索
+                    const workInfo = await scrapeByTitleWithFallback(titleFromFile, folderPath, rjCode)
+
+                    if (workInfo) {
+                        libraryData.works[rjCode] = workInfo
+                        result.success++
+                        result.newWorks.push(rjCode)
+                        console.log(`[Library] Found info for: ${titleFromFile}`)
+                    } else {
+                        // 見つからなかった場合はフォールバック
+                        libraryData.works[rjCode] = {
+                            rjCode,
+                            title: titleFromFile,
+                            circle: 'ローカル作品',
+                            authors: [],
+                            tags: ['ローカル'],
+                            description: 'オンラインで情報が見つかりませんでした。',
+                            thumbnailUrl: '',
+                            localPath: folderPath,
+                            fetchedAt: new Date().toISOString(),
+                        }
+                        result.success++
+                        result.newWorks.push(rjCode)
+                        result.errors.push(`${titleFromFile}: オンラインで情報が見つかりませんでした`)
+                    }
+                } catch (error) {
+                    console.error(`[Library] Error searching for ${titleFromFile}:`, error)
                     libraryData.works[rjCode] = {
                         rjCode,
                         title: titleFromFile,
                         circle: 'ローカル作品',
                         authors: [],
                         tags: ['ローカル'],
-                        description: 'オンラインで情報が見つかりませんでした。',
+                        description: '検索中にエラーが発生しました。',
                         thumbnailUrl: '',
                         localPath: folderPath,
                         fetchedAt: new Date().toISOString(),
                     }
                     result.success++
                     result.newWorks.push(rjCode)
-                    result.errors.push(`${titleFromFile}: オンラインで情報が見つかりませんでした`)
+                }
+
+                // レート制限対策のディレイ
+                if (i < newWorks.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, settings.requestDelay))
+                }
+                continue
+            }
+
+            // RJコードがある場合はスクレイピングを試行
+            try {
+                if (onProgress) {
+                    onProgress(i + 1, newWorks.length, rjCode, 'スクレイピング中...')
+                }
+
+                const workInfo = await scrapeWorkInfo(rjCode, folderPath)
+
+                if (workInfo) {
+                    libraryData.works[rjCode] = workInfo
+                    result.success++
+                    result.newWorks.push(rjCode)
+                } else {
+                    // スクレイピング失敗時のフォールバック
+                    libraryData.works[rjCode] = {
+                        rjCode,
+                        title: titleFromFile,
+                        circle: '未取得',
+                        authors: [],
+                        tags: ['未取得'],
+                        description: '情報の取得に失敗しました。',
+                        thumbnailUrl: '',
+                        localPath: folderPath,
+                        fetchedAt: new Date().toISOString(),
+                    }
+                    result.success++
+                    result.newWorks.push(rjCode)
+                    result.errors.push(`${rjCode}: 情報を取得できませんでした（仮登録）`)
                 }
             } catch (error) {
-                console.error(`[Library] Error searching for ${titleFromFile}:`, error)
+                // エラー発生時のフォールバック
+                console.error(`[Library] Scrape error for ${rjCode}:`, error)
+
                 libraryData.works[rjCode] = {
                     rjCode,
                     title: titleFromFile,
-                    circle: 'ローカル作品',
+                    circle: 'エラー',
                     authors: [],
-                    tags: ['ローカル'],
-                    description: '検索中にエラーが発生しました。',
+                    tags: ['エラー'],
+                    description: `エラーが発生しました: ${error instanceof Error ? error.message : String(error)}`,
                     thumbnailUrl: '',
                     localPath: folderPath,
                     fetchedAt: new Date().toISOString(),
                 }
                 result.success++
                 result.newWorks.push(rjCode)
+                result.errors.push(`${rjCode}: エラーにより仮登録しました`)
             }
 
-            // レート制限対策のディレイ
-            if (i < newWorks.length - 1) {
+            // 1件ごとに保存と通知（リアルタイム更新）
+            saveLibraryData(libraryData)
+            webContents.getAllWebContents().forEach(wc => {
+                wc.send('library:updated')
+            })
+
+            // レート制限対策のディレイ（RJコードがある場合のみ）
+            if (i < newWorks.length - 1 && !rjCode.startsWith('LOCAL_')) {
                 await new Promise(resolve => setTimeout(resolve, settings.requestDelay))
             }
-            continue
         }
 
-        // RJコードがある場合はスクレイピングを試行
-        try {
-            if (onProgress) {
-                onProgress(i + 1, newWorks.length, rjCode, 'スクレイピング中...')
-            }
+        // ライブラリデータを保存
+        saveLibraryData(libraryData)
 
-            const workInfo = await scrapeWorkInfo(rjCode, folderPath)
-
-            if (workInfo) {
-                libraryData.works[rjCode] = workInfo
-                result.success++
-                result.newWorks.push(rjCode)
-            } else {
-                // スクレイピング失敗時のフォールバック
-                libraryData.works[rjCode] = {
-                    rjCode,
-                    title: titleFromFile,
-                    circle: '未取得',
-                    authors: [],
-                    tags: ['未取得'],
-                    description: '情報の取得に失敗しました。',
-                    thumbnailUrl: '',
-                    localPath: folderPath,
-                    fetchedAt: new Date().toISOString(),
-                }
-                result.success++
-                result.newWorks.push(rjCode)
-                result.errors.push(`${rjCode}: 情報を取得できませんでした（仮登録）`)
-            }
-        } catch (error) {
-            // エラー発生時のフォールバック
-            console.error(`[Library] Scrape error for ${rjCode}:`, error)
-
-            libraryData.works[rjCode] = {
-                rjCode,
-                title: titleFromFile,
-                circle: 'エラー',
-                authors: [],
-                tags: ['エラー'],
-                description: `エラーが発生しました: ${error instanceof Error ? error.message : String(error)}`,
-                thumbnailUrl: '',
-                localPath: folderPath,
-                fetchedAt: new Date().toISOString(),
-            }
-            result.success++
-            result.newWorks.push(rjCode)
-            result.errors.push(`${rjCode}: エラーにより仮登録しました`)
-        }
-
-        // レート制限対策のディレイ（RJコードがある場合のみ）
-        if (i < newWorks.length - 1 && !rjCode.startsWith('LOCAL_')) {
-            await new Promise(resolve => setTimeout(resolve, settings.requestDelay))
-        }
+        return result
+    } catch (error) {
+        console.error('[Library] Scan error:', error)
+        throw error
+    } finally {
+        isScanningGlobal = false
+        // 状態変更を通知
+        webContents.getAllWebContents().forEach(wc => {
+            wc.send('library:scanStateChanged', false)
+        })
     }
-
-    // ライブラリデータを保存
-    saveLibraryData(libraryData)
-
-    return result
 }
 
 /**
@@ -585,4 +626,125 @@ export function cleanupMissingWorks(): { removed: string[]; errors: string[] } {
     }
 
     return { removed, errors }
+}
+
+/**
+ * 読書進捗を更新
+ */
+export function updateReadingProgress(
+    rjCode: string,
+    currentPage: number,
+    totalPages: number
+): boolean {
+    const libraryData = loadLibraryData()
+    const work = libraryData.works[rjCode]
+
+    if (!work) {
+        console.error(`[Library] Work not found: ${rjCode}`)
+        return false
+    }
+
+    work.lastReadAt = new Date().toISOString()
+    work.lastReadPage = currentPage
+    work.totalPages = totalPages
+
+    saveLibraryData(libraryData)
+    console.log(`[Library] Updated reading progress: ${rjCode} - Page ${currentPage + 1}/${totalPages}`)
+    return true
+}
+
+/**
+ * 最近読んだ作品を取得（最大N件）
+ */
+export function getRecentlyReadWorks(limit: number = 10): import('./types').WorkInfo[] {
+    const libraryData = loadLibraryData()
+    const works = Object.values(libraryData.works)
+        .filter(work => work.lastReadAt && !work.isHidden)
+        .sort((a, b) => {
+            const dateA = new Date(a.lastReadAt || 0).getTime()
+            const dateB = new Date(b.lastReadAt || 0).getTime()
+            return dateB - dateA
+        })
+        .slice(0, limit)
+
+    return works
+}
+
+/**
+ * フォルダ監視のセットアップ/更新
+ */
+export function setupFolderWatcher(): void {
+    const settings = loadSettings()
+    const paths = settings.libraryPaths
+
+    // 既存の監視をクローズ
+    if (watcher) {
+        watcher.close()
+        watcher = null
+    }
+
+    // 自動スキャンが無効、またはパスがない場合は何もしない
+    if (!settings.autoScan || paths.length === 0) {
+        console.log('[Watcher] Real-time monitoring is disabled or no paths.')
+        return
+    }
+
+    console.log(`[Watcher] Starting watcher for ${paths.length} paths...`)
+
+    // 新しい監視を開始
+    watcher = chokidar.watch(paths, {
+        persistent: true,
+        ignoreInitial: true,
+        depth: 1, // トップレベルの変更のみ監視
+        awaitWriteFinish: {
+            stabilityThreshold: 2000,
+            pollInterval: 100
+        }
+    })
+
+    const triggerAutoScan = () => {
+        if (scanTimer) clearTimeout(scanTimer)
+
+        scanTimer = setTimeout(async () => {
+            console.log('[Watcher] Change detected. Triggering auto-scan...')
+            try {
+                const currentSettings = loadSettings()
+
+                // 各パスをスキャン
+                for (const p of currentSettings.libraryPaths) {
+                    await scanAndUpdateLibrary(p)
+                }
+
+                // 存在しないファイルをクリーンアップ
+                cleanupMissingWorks()
+
+                // フロントエンドに通知
+                const windows = webContents.getAllWebContents()
+                windows.forEach(wc => {
+                    wc.send('library:updated', { source: 'watcher' })
+                })
+                console.log('[Watcher] Auto-scan completed.')
+            } catch (err) {
+                console.error('[Watcher] Auto-scan failed:', err)
+            }
+        }, 5000) // 5秒待機して安定してから実行
+    }
+
+    watcher
+        .on('add', (path) => {
+            console.log(`[Watcher] File added: ${path}`)
+            triggerAutoScan()
+        })
+        .on('addDir', (path) => {
+            console.log(`[Watcher] Directory added: ${path}`)
+            triggerAutoScan()
+        })
+        .on('unlink', (path) => {
+            console.log(`[Watcher] File removed: ${path}`)
+            triggerAutoScan()
+        })
+        .on('unlinkDir', (path) => {
+            console.log(`[Watcher] Directory removed: ${path}`)
+            triggerAutoScan()
+        })
 }

@@ -76,6 +76,16 @@ const electronAPI = {
         return ipcRenderer.invoke('library:cleanupMissing')
     },
 
+    /** 読書進捗を更新 */
+    updateReadingProgress: (rjCode: string, currentPage: number, totalPages: number) => {
+        return ipcRenderer.invoke('library:updateReadingProgress', rjCode, currentPage, totalPages)
+    },
+
+    /** 最近読んだ作品を取得 */
+    getRecentlyReadWorks: (limit?: number) => {
+        return ipcRenderer.invoke('library:getRecentlyRead', limit)
+    },
+
     /** スキャン進行状況のリスナーを登録 */
     onScanProgress: (callback: ScanProgressCallback) => {
         const handler = (_event: Electron.IpcRendererEvent, data: Parameters<ScanProgressCallback>[0]) => {
@@ -86,6 +96,31 @@ const electronAPI = {
         // クリーンアップ関数を返す
         return () => {
             ipcRenderer.removeListener('library:scanProgress', handler)
+        }
+    },
+
+    /** ライブラリ更新イベントのリスナー */
+    onLibraryUpdated: (callback: () => void) => {
+        const handler = () => callback()
+        ipcRenderer.on('library:updated', handler)
+        return () => {
+            ipcRenderer.removeListener('library:updated', handler)
+        }
+    },
+
+    /** 現在スキャン中か確認 */
+    isScanning: () => {
+        return ipcRenderer.invoke('library:isScanning')
+    },
+
+    /** スキャン状態変更イベントのリスナー */
+    onScanStateChanged: (callback: (isScanning: boolean) => void) => {
+        const handler = (_event: Electron.IpcRendererEvent, isScanning: boolean) => {
+            callback(isScanning)
+        }
+        ipcRenderer.on('library:scanStateChanged', handler)
+        return () => {
+            ipcRenderer.removeListener('library:scanStateChanged', handler)
         }
     },
 

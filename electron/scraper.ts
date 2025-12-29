@@ -226,6 +226,44 @@ function parseDLsitePage(html: string, rjCode: string, localPath: string): WorkI
 
     console.log(`[Scraper] Work type: ${workType}`)
 
+    // サンプル画像の取得
+    const sampleImages: string[] = []
+    const sampleSelectors = [
+        '.product-slider-data div[data-src]',
+        '.work_slider .slider_item img',
+        '#work_left .work_slider img',
+        '.product-slide-item img',
+    ]
+
+    for (const selector of sampleSelectors) {
+        $(selector).each((_, element) => {
+            let imgUrl = $(element).attr('data-src') || $(element).attr('src') || ''
+            if (imgUrl && !imgUrl.startsWith('http')) {
+                imgUrl = `https:${imgUrl}`
+            }
+            if (imgUrl && !sampleImages.includes(imgUrl)) {
+                sampleImages.push(imgUrl)
+            }
+        })
+        if (sampleImages.length > 0) break
+    }
+
+    // スライダーのdata属性からも取得を試みる
+    $('.product-slider-data div').each((_, element) => {
+        const dataSrc = $(element).attr('data-src')
+        if (dataSrc) {
+            let imgUrl = dataSrc
+            if (!imgUrl.startsWith('http')) {
+                imgUrl = `https:${imgUrl}`
+            }
+            if (!sampleImages.includes(imgUrl)) {
+                sampleImages.push(imgUrl)
+            }
+        }
+    })
+
+    console.log(`[Scraper] Found ${sampleImages.length} sample images`)
+
     const workInfo: WorkInfo = {
         rjCode,
         title,
@@ -239,6 +277,7 @@ function parseDLsitePage(html: string, rjCode: string, localPath: string): WorkI
         releaseDate,
         ageRating,
         workType,
+        sampleImages: sampleImages.slice(0, 10), // 最大10枚まで
     }
 
     console.log(`[Scraper] Successfully scraped from DLsite: ${title} (${rjCode})`)
