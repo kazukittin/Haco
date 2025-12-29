@@ -15,6 +15,8 @@ export interface WorkInfo {
     fetchedAt: string
     releaseDate?: string
     ageRating?: string
+    workType?: string
+    isHidden?: boolean
 }
 
 export interface LibraryData {
@@ -90,6 +92,9 @@ interface ElectronAPI {
     getAllTags: () => Promise<TagCount[]>
     getAllCircles: () => Promise<CircleCount[]>
     removeWork: (rjCode: string) => Promise<boolean>
+    toggleWorkVisibility: (rjCode: string) => Promise<boolean>
+    deleteWorkWithFiles: (rjCode: string) => Promise<{ success: boolean; error?: string }>
+    cleanupMissingWorks: () => Promise<{ removed: string[]; errors: string[] }>
     onScanProgress: (callback: (data: ScanProgress) => void) => () => void
 
     // ビューア操作

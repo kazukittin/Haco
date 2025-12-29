@@ -61,6 +61,21 @@ const electronAPI = {
         return ipcRenderer.invoke('library:removeWork', rjCode)
     },
 
+    /** 作品の非表示/表示を切り替え */
+    toggleWorkVisibility: (rjCode: string) => {
+        return ipcRenderer.invoke('library:toggleVisibility', rjCode)
+    },
+
+    /** 作品とファイルを削除 */
+    deleteWorkWithFiles: (rjCode: string) => {
+        return ipcRenderer.invoke('library:deleteWithFiles', rjCode)
+    },
+
+    /** 存在しないファイルの作品をクリーンアップ */
+    cleanupMissingWorks: () => {
+        return ipcRenderer.invoke('library:cleanupMissing')
+    },
+
     /** スキャン進行状況のリスナーを登録 */
     onScanProgress: (callback: ScanProgressCallback) => {
         const handler = (_event: Electron.IpcRendererEvent, data: Parameters<ScanProgressCallback>[0]) => {

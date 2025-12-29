@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import type { WorkInfo, LibraryData, TagCount, CircleCount, ScanResult } from './vite-env.d'
+import type { WorkInfo, LibraryData, TagCount, CircleCount } from './vite-env.d'
 import { Sidebar } from './components/Sidebar'
 import { WorkGrid } from './components/WorkGrid'
 import { SettingsPage } from './components/SettingsPage'
@@ -21,6 +21,7 @@ function App() {
     const [searchQuery, setSearchQuery] = useState('')
     const [selectedTags, setSelectedTags] = useState<string[]>([])
     const [selectedCircle, setSelectedCircle] = useState('')
+    const [selectedWorkType, setSelectedWorkType] = useState('')
 
     // モーダル状態
     const [selectedWork, setSelectedWork] = useState<WorkInfo | null>(null)
@@ -81,9 +82,24 @@ function App() {
             .sort((a, b) => b.count - a.count)
     }, [allWorks])
 
+    // 作品形式一覧（作品数順）
+    const workTypes = useMemo(() => {
+        const typeCounts = new Map<string, number>()
+        allWorks.forEach((work) => {
+            const type = work.workType || 'その他'
+            typeCounts.set(type, (typeCounts.get(type) || 0) + 1)
+        })
+        return Array.from(typeCounts.entries())
+            .map(([type, count]) => ({ type, count }))
+            .sort((a, b) => b.count - a.count)
+    }, [allWorks])
+
     // フィルタリングされた作品リスト
     const filteredWorks = useMemo(() => {
         let works = allWorks
+
+        // 非表示作品を除外
+        works = works.filter((work) => !work.isHidden)
 
         // キーワード検索
         if (searchQuery.trim()) {
@@ -109,8 +125,13 @@ function App() {
             works = works.filter((work) => work.circle === selectedCircle)
         }
 
+        // 作品形式フィルター
+        if (selectedWorkType) {
+            works = works.filter((work) => (work.workType || 'その他') === selectedWorkType)
+        }
+
         return works
-    }, [allWorks, searchQuery, selectedTags, selectedCircle])
+    }, [allWorks, searchQuery, selectedTags, selectedCircle, selectedWorkType])
 
     // タグ選択/解除
     const handleTagToggle = useCallback((tag: string) => {
@@ -124,6 +145,7 @@ function App() {
         setSearchQuery('')
         setSelectedTags([])
         setSelectedCircle('')
+        setSelectedWorkType('')
     }, [])
 
     // 作品クリック時
@@ -221,6 +243,9 @@ function App() {
                 circles={circles}
                 selectedCircle={selectedCircle}
                 onCircleChange={setSelectedCircle}
+                workTypes={workTypes}
+                selectedWorkType={selectedWorkType}
+                onWorkTypeChange={setSelectedWorkType}
                 onClearFilters={handleClearFilters}
                 // サイドバーの更新ボタンは表示のみの更新にする
                 onRefresh={loadLibraryData}
@@ -282,6 +307,7 @@ function App() {
                 onClose={() => setSelectedWork(null)}
                 onTagClick={handleDetailTagClick}
                 onPlay={handleOpenViewer}
+                onRefresh={loadLibraryData}
             />
 
             {/* ビューアモーダル */}

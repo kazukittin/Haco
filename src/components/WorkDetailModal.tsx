@@ -1,16 +1,21 @@
+import { useState } from 'react'
 import type { WorkInfo } from '@/vite-env.d'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { XIcon, BookOpenIcon, FolderIcon } from '@/components/ui/icons'
+import { XIcon, BookOpenIcon, FolderIcon, TrashIcon, EyeOffIcon, EyeIcon } from '@/components/ui/icons'
 
 interface WorkDetailModalProps {
     work: WorkInfo | null
     onClose: () => void
     onTagClick?: (tag: string) => void
     onPlay?: (work: WorkInfo) => void
+    onRefresh?: () => void
 }
 
-export function WorkDetailModal({ work, onClose, onTagClick, onPlay }: WorkDetailModalProps) {
+export function WorkDetailModal({ work, onClose, onTagClick, onPlay, onRefresh }: WorkDetailModalProps) {
+    const [isDeleting, setIsDeleting] = useState(false)
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
     if (!work) return null
 
     const handlePlayClick = () => {
@@ -22,6 +27,38 @@ export function WorkDetailModal({ work, onClose, onTagClick, onPlay }: WorkDetai
     const handleOpenFolder = () => {
         // 将来的には electronAPI.openFolder(work.localPath) などを実装
         console.log('Open folder:', work.localPath)
+    }
+
+    const handleToggleVisibility = async () => {
+        const success = await window.electronAPI.toggleWorkVisibility(work.rjCode)
+        if (success) {
+            onRefresh?.()
+            onClose()
+        }
+    }
+
+    const handleDelete = async (withFiles: boolean) => {
+        setIsDeleting(true)
+        try {
+            if (withFiles) {
+                const result = await window.electronAPI.deleteWorkWithFiles(work.rjCode)
+                if (result.success) {
+                    onRefresh?.()
+                    onClose()
+                } else {
+                    alert(`削除に失敗しました: ${result.error}`)
+                }
+            } else {
+                const success = await window.electronAPI.removeWork(work.rjCode)
+                if (success) {
+                    onRefresh?.()
+                    onClose()
+                }
+            }
+        } finally {
+            setIsDeleting(false)
+            setShowDeleteConfirm(false)
+        }
     }
 
     return (
@@ -42,6 +79,44 @@ export function WorkDetailModal({ work, onClose, onTagClick, onPlay }: WorkDetai
                     <XIcon className="w-5 h-5 text-white" />
                 </button>
 
+                {/* 削除確認ダイアログ */}
+                {showDeleteConfirm && (
+                    <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+                        <div className="bg-slate-800 border border-white/10 rounded-xl p-6 max-w-md mx-4">
+                            <h3 className="text-lg font-bold text-white mb-4">削除の確認</h3>
+                            <p className="text-slate-300 mb-6">
+                                「{work.title}」を削除しますか？
+                            </p>
+                            <div className="flex flex-col gap-3">
+                                <Button
+                                    className="w-full bg-red-600 hover:bg-red-700 text-white"
+                                    onClick={() => handleDelete(true)}
+                                    disabled={isDeleting}
+                                >
+                                    <TrashIcon className="w-4 h-4 mr-2" />
+                                    ファイルも削除
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    className="w-full border-white/20 text-slate-300 hover:bg-white/5"
+                                    onClick={() => handleDelete(false)}
+                                    disabled={isDeleting}
+                                >
+                                    ライブラリからのみ削除
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    className="w-full text-slate-400 hover:text-white"
+                                    onClick={() => setShowDeleteConfirm(false)}
+                                    disabled={isDeleting}
+                                >
+                                    キャンセル
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* コンテンツ */}
                 <div className="flex flex-col md:flex-row overflow-hidden">
                     {/* 左：サムネイル */}
@@ -51,7 +126,7 @@ export function WorkDetailModal({ work, onClose, onTagClick, onPlay }: WorkDetai
                                 <img
                                     src={work.thumbnailUrl}
                                     alt={work.title}
-                                    className="w-full h-full object-cover"
+                                    className="w-full h-full object-contain"
                                 />
                             ) : (
                                 <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-purple-900/30 to-slate-900">
@@ -63,6 +138,14 @@ export function WorkDetailModal({ work, onClose, onTagClick, onPlay }: WorkDetai
 
                             {/* グラデーションオーバーレイ */}
                             <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent md:bg-gradient-to-r" />
+
+                            {/* 非表示バッジ */}
+                            {work.isHidden && (
+                                <div className="absolute top-2 left-2 px-2 py-1 bg-slate-800/80 rounded text-xs text-slate-400 flex items-center gap-1">
+                                    <EyeOffIcon className="w-3 h-3" />
+                                    非表示
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -78,25 +161,33 @@ export function WorkDetailModal({ work, onClose, onTagClick, onPlay }: WorkDetai
 
                         {/* サークル・作者 */}
                         <div className="space-y-1 mb-4">
-                            <p className="text-sm text-slate-300">
-                                <span className="text-slate-500 mr-2">サークル:</span>
-                                {work.circle}
-                            </p>
+                            {work.circle && (
+                                <p className="text-slate-400">
+                                    <span className="text-slate-500">サークル: </span>
+                                    {work.circle}
+                                </p>
+                            )}
                             {work.authors.length > 0 && (
-                                <p className="text-sm text-slate-300">
-                                    <span className="text-slate-500 mr-2">作者:</span>
+                                <p className="text-slate-400">
+                                    <span className="text-slate-500">作者: </span>
                                     {work.authors.join(', ')}
                                 </p>
                             )}
                             {work.releaseDate && (
-                                <p className="text-sm text-slate-300">
-                                    <span className="text-slate-500 mr-2">販売日:</span>
+                                <p className="text-slate-400">
+                                    <span className="text-slate-500">発売日: </span>
                                     {work.releaseDate}
+                                </p>
+                            )}
+                            {work.workType && (
+                                <p className="text-slate-400">
+                                    <span className="text-slate-500">形式: </span>
+                                    {work.workType}
                                 </p>
                             )}
                         </div>
 
-                        {/* タグ */}
+                        {/* タグ一覧 */}
                         <div className="mb-4">
                             <p className="text-xs text-slate-500 mb-2">タグ</p>
                             <div className="flex flex-wrap gap-1.5">
@@ -139,6 +230,37 @@ export function WorkDetailModal({ work, onClose, onTagClick, onPlay }: WorkDetai
                             >
                                 <FolderIcon className="w-4 h-4 mr-2" />
                                 フォルダを開く
+                            </Button>
+                        </div>
+
+                        {/* 管理ボタン */}
+                        <div className="flex gap-2 mt-4 pt-4 border-t border-white/5">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-slate-500 hover:text-white hover:bg-white/5"
+                                onClick={handleToggleVisibility}
+                            >
+                                {work.isHidden ? (
+                                    <>
+                                        <EyeIcon className="w-4 h-4 mr-1" />
+                                        表示する
+                                    </>
+                                ) : (
+                                    <>
+                                        <EyeOffIcon className="w-4 h-4 mr-1" />
+                                        非表示にする
+                                    </>
+                                )}
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                                onClick={() => setShowDeleteConfirm(true)}
+                            >
+                                <TrashIcon className="w-4 h-4 mr-1" />
+                                削除
                             </Button>
                         </div>
 

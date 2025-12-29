@@ -172,6 +172,60 @@ function parseDLsitePage(html: string, rjCode: string, localPath: string): WorkI
         ageRating = '18禁'
     }
 
+    // 作品形式の取得（マンガ、CG・イラスト、ゲームなど）
+    let workType = 'その他'
+    const workTypeSelectors = [
+        '.work_genre .work_type',
+        '#work_outline tr th:contains("作品形式") + td',
+        '.work_type_icon',
+    ]
+
+    // タグから作品形式を判定
+    const workTypeKeywords: Record<string, string> = {
+        'マンガ': 'マンガ',
+        '漫画': 'マンガ',
+        'CG・イラスト': 'CG・イラスト',
+        'CG集': 'CG・イラスト',
+        'イラスト': 'CG・イラスト',
+        'ゲーム': 'ゲーム',
+        'RPG': 'ゲーム',
+        'ADV': 'ゲーム',
+        'ノベル': 'ノベル',
+        'ボイス': 'ボイス',
+        'ASMR': 'ボイス',
+        '音声': 'ボイス',
+        '動画': '動画',
+        'アニメ': '動画',
+    }
+
+    // タグから作品形式を検出
+    for (const tag of tags) {
+        for (const [keyword, type] of Object.entries(workTypeKeywords)) {
+            if (tag.includes(keyword)) {
+                workType = type
+                break
+            }
+        }
+        if (workType !== 'その他') break
+    }
+
+    // HTMLからも取得を試みる
+    for (const selector of workTypeSelectors) {
+        const element = $(selector).first()
+        if (element.length) {
+            const text = element.text().trim()
+            for (const [keyword, type] of Object.entries(workTypeKeywords)) {
+                if (text.includes(keyword)) {
+                    workType = type
+                    break
+                }
+            }
+        }
+        if (workType !== 'その他') break
+    }
+
+    console.log(`[Scraper] Work type: ${workType}`)
+
     const workInfo: WorkInfo = {
         rjCode,
         title,
@@ -184,6 +238,7 @@ function parseDLsitePage(html: string, rjCode: string, localPath: string): WorkI
         fetchedAt: new Date().toISOString(),
         releaseDate,
         ageRating,
+        workType,
     }
 
     console.log(`[Scraper] Successfully scraped from DLsite: ${title} (${rjCode})`)

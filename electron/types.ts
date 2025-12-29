@@ -24,6 +24,10 @@ export interface WorkInfo {
     releaseDate?: string
     /** 年齢レーティング */
     ageRating?: string
+    /** 作品形式（マンガ、CG・イラスト、ゲームなど） */
+    workType?: string
+    /** 非表示フラグ */
+    isHidden?: boolean
 }
 
 /**

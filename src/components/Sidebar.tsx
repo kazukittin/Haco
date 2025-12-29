@@ -15,6 +15,11 @@ import {
 } from '@/components/ui/icons'
 import type { TagCount, CircleCount } from '@/vite-env.d'
 
+interface WorkTypeCount {
+    type: string
+    count: number
+}
+
 interface SidebarProps {
     searchQuery: string
     onSearchChange: (query: string) => void
@@ -24,6 +29,9 @@ interface SidebarProps {
     circles: CircleCount[]
     selectedCircle: string
     onCircleChange: (circle: string) => void
+    workTypes: WorkTypeCount[]
+    selectedWorkType: string
+    onWorkTypeChange: (workType: string) => void
     onClearFilters: () => void
     onRefresh: () => void
     onOpenSettings: () => void
@@ -41,6 +49,9 @@ export function Sidebar({
     circles,
     selectedCircle,
     onCircleChange,
+    workTypes,
+    selectedWorkType,
+    onWorkTypeChange,
     onClearFilters,
     onRefresh,
     onOpenSettings,
@@ -48,7 +59,7 @@ export function Sidebar({
     filteredWorks,
     isLoading = false,
 }: SidebarProps) {
-    const hasActiveFilters = searchQuery || selectedTags.length > 0 || selectedCircle
+    const hasActiveFilters = searchQuery || selectedTags.length > 0 || selectedCircle || selectedWorkType
 
     // サークルのオプションを生成
     const circleOptions = [
@@ -56,6 +67,15 @@ export function Sidebar({
         ...circles.slice(0, 50).map((c) => ({
             value: c.circle,
             label: `${c.circle} (${c.count})`,
+        })),
+    ]
+
+    // 作品形式のオプションを生成
+    const workTypeOptions = [
+        { value: '', label: 'すべての形式' },
+        ...workTypes.map((t) => ({
+            value: t.type,
+            label: `${t.type} (${t.count})`,
         })),
     ]
 
@@ -112,6 +132,24 @@ export function Sidebar({
                         </div>
                     </div>
 
+                    {/* 作品形式フィルター */}
+                    {workTypes.length > 0 && (
+                        <div className="space-y-2">
+                            <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
+                                <FilterIcon className="w-4 h-4" />
+                                作品形式
+                            </label>
+                            <div className="relative">
+                                <Select
+                                    value={selectedWorkType}
+                                    onChange={(e) => onWorkTypeChange(e.target.value)}
+                                    options={workTypeOptions}
+                                    className="bg-slate-800/50 border-white/10 focus:border-purple-500/50"
+                                />
+                            </div>
+                        </div>
+                    )}
+
                     {/* サークルフィルター */}
                     <div className="space-y-2">
                         <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
@@ -154,8 +192,8 @@ export function Sidebar({
                                         variant={isSelected ? 'selected' : 'outline'}
                                         onClick={() => onTagToggle(tag)}
                                         className={`text-xs transition-all duration-200 ${isSelected
-                                                ? 'bg-purple-600 border-purple-600 text-white shadow-md shadow-purple-500/20'
-                                                : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
+                                            ? 'bg-purple-600 border-purple-600 text-white shadow-md shadow-purple-500/20'
+                                            : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
                                             }`}
                                     >
                                         {tag}

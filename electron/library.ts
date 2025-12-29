@@ -137,9 +137,25 @@ export function extractRJCode(folderName: string): string | null {
  * ファイル名から一意のIDを生成（RJコードがない場合用）
  */
 function generateWorkId(name: string): string {
-    // 拡張子を除去してプレフィックスを付ける
+    // 拡張子を除去
     const baseName = name.replace(/\.(zip|cbz|rar)$/i, '')
-    return `LOCAL_${baseName.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50)}`
+
+    // 簡易ハッシュを生成（ファイル名の文字コードを合計してBase36に変換）
+    let hash = 0
+    for (let i = 0; i < baseName.length; i++) {
+        hash = ((hash << 5) - hash) + baseName.charCodeAt(i)
+        hash = hash & hash // 32bit整数に変換
+    }
+    const hashStr = Math.abs(hash).toString(36).toUpperCase()
+
+    // 英数字部分を抽出（あれば）
+    const alphanumeric = baseName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 20)
+
+    if (alphanumeric.length > 0) {
+        return `LOCAL_${alphanumeric}_${hashStr}`
+    } else {
+        return `LOCAL_${hashStr}`
+    }
 }
 
 // サポートするアーカイブ拡張子
@@ -468,4 +484,105 @@ export function getAllCircles(libraryData?: LibraryData): Array<{ circle: string
     return Array.from(circleCounts.entries())
         .map(([circle, count]) => ({ circle, count }))
         .sort((a, b) => b.count - a.count)
+}
+
+/**
+ * 作品を非表示/表示に切り替え
+ */
+export function toggleWorkVisibility(rjCode: string): boolean {
+    const libraryData = loadLibraryData()
+    const work = libraryData.works[rjCode]
+
+    if (!work) {
+        console.error(`[Library] Work not found: ${rjCode}`)
+        return false
+    }
+
+    work.isHidden = !work.isHidden
+    saveLibraryData(libraryData)
+    console.log(`[Library] Work ${rjCode} visibility set to: ${!work.isHidden}`)
+    return true
+}
+
+/**
+ * 作品をライブラリから削除（ファイルは残す）
+ */
+export function removeWorkFromLibrary(rjCode: string): boolean {
+    const libraryData = loadLibraryData()
+
+    if (!libraryData.works[rjCode]) {
+        console.error(`[Library] Work not found: ${rjCode}`)
+        return false
+    }
+
+    delete libraryData.works[rjCode]
+    saveLibraryData(libraryData)
+    console.log(`[Library] Removed work from library: ${rjCode}`)
+    return true
+}
+
+/**
+ * 作品をライブラリから削除し、実ファイルも削除
+ */
+export function deleteWorkWithFiles(rjCode: string): { success: boolean; error?: string } {
+    const libraryData = loadLibraryData()
+    const work = libraryData.works[rjCode]
+
+    if (!work) {
+        return { success: false, error: '作品が見つかりません' }
+    }
+
+    const filePath = work.localPath
+
+    try {
+        // ファイル/フォルダの存在確認
+        if (fs.existsSync(filePath)) {
+            const stat = fs.statSync(filePath)
+
+            if (stat.isDirectory()) {
+                // フォルダの場合は再帰的に削除
+                fs.rmSync(filePath, { recursive: true, force: true })
+            } else {
+                // ファイルの場合は単純削除
+                fs.unlinkSync(filePath)
+            }
+            console.log(`[Library] Deleted file/folder: ${filePath}`)
+        } else {
+            console.log(`[Library] File not found (already deleted?): ${filePath}`)
+        }
+
+        // ライブラリからも削除
+        delete libraryData.works[rjCode]
+        saveLibraryData(libraryData)
+
+        return { success: true }
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        console.error(`[Library] Error deleting files: ${errorMessage}`)
+        return { success: false, error: errorMessage }
+    }
+}
+
+/**
+ * 存在しないファイルの作品を検出して削除
+ */
+export function cleanupMissingWorks(): { removed: string[]; errors: string[] } {
+    const libraryData = loadLibraryData()
+    const removed: string[] = []
+    const errors: string[] = []
+
+    for (const [rjCode, work] of Object.entries(libraryData.works)) {
+        if (!fs.existsSync(work.localPath)) {
+            console.log(`[Library] Missing file detected: ${work.localPath}`)
+            removed.push(rjCode)
+            delete libraryData.works[rjCode]
+        }
+    }
+
+    if (removed.length > 0) {
+        saveLibraryData(libraryData)
+        console.log(`[Library] Cleaned up ${removed.length} missing works`)
+    }
+
+    return { removed, errors }
 }

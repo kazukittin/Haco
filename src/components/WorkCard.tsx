@@ -2,7 +2,6 @@ import { useState } from 'react'
 import type { WorkInfo } from '@/vite-env.d'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { PlayIcon } from '@/components/ui/icons'
 
 interface WorkCardProps {
     work: WorkInfo
@@ -62,8 +61,8 @@ export function WorkCard({ work, onClick }: WorkCardProps) {
                 {/* ホバー時のオーバーレイ */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                     <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-14 h-14 rounded-full bg-purple-600 flex items-center justify-center transform scale-75 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-300 shadow-lg shadow-purple-500/50">
-                            <PlayIcon className="w-6 h-6 text-white ml-1" />
+                        <div className="px-6 py-3 rounded-full bg-purple-600 flex items-center justify-center transform scale-75 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-300 shadow-lg shadow-purple-500/50">
+                            <span className="text-white font-medium text-sm">読む</span>
                         </div>
                     </div>
                 </div>

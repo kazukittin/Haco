@@ -9,6 +9,10 @@ import {
     filterByTag,
     getAllTags,
     getAllCircles,
+    toggleWorkVisibility,
+    removeWorkFromLibrary,
+    deleteWorkWithFiles,
+    cleanupMissingWorks,
 } from './library'
 import { getViewerData, getImageData } from './viewer'
 import type { AppSettings, LibraryData } from './types'
@@ -95,6 +99,21 @@ export function registerIPCHandlers(): void {
             return true
         }
         return false
+    })
+
+    // 作品の非表示/表示を切り替え
+    ipcMain.handle('library:toggleVisibility', (_event, rjCode: string) => {
+        return toggleWorkVisibility(rjCode)
+    })
+
+    // 作品をライブラリから削除（ファイルも削除）
+    ipcMain.handle('library:deleteWithFiles', (_event, rjCode: string) => {
+        return deleteWorkWithFiles(rjCode)
+    })
+
+    // 存在しないファイルの作品をクリーンアップ
+    ipcMain.handle('library:cleanupMissing', () => {
+        return cleanupMissingWorks()
     })
 
     // ========================================
