@@ -29,7 +29,7 @@ const EXCLUDED_TAG_WORDS = [
 /**
  * タイトルが十分に近いか判定（特に数字の一致を重視）
  */
-function isGoodMatch(query: string, target: string, fuzzyWords: string[] = []): boolean {
+function isGoodMatch(query: string, target: string): boolean {
     const q = query.toLowerCase().trim()
     const t = target.toLowerCase().trim()
 
@@ -53,13 +53,6 @@ function isGoodMatch(query: string, target: string, fuzzyWords: string[] = []): 
     // 伏字記号を正規表現の任意一文字 (.) として扱うための変換
     const symbolToWildcard = (s: string) => {
         let result = s.replace(/[〇○×✕●■＊\*]/g, '.')
-        // ユーザー指定のワードもワイルドカード化（各文字をドットに）
-        for (const word of fuzzyWords) {
-            if (!word) continue
-            const escapedWord = word.replace(/[.+*?^${}()|[\]\\]/g, '\\$&')
-            const dots = '.'.repeat(word.length)
-            result = result.replace(new RegExp(escapedWord, 'gi'), dots)
-        }
         return result.replace(/[.+*?^${}()|[\]\\]/g, (m) => m === '.' ? '.' : '\\' + m) // ドット以外をエスケープ
     }
 
@@ -351,7 +344,7 @@ function parseDLsitePage(html: string, rjCode: string, localPath: string): WorkI
 /**
  * DLsiteでタイトル検索してスクレイピング（複数ドメインを試行）
  */
-export async function scrapeByTitle(title: string, localPath: string, workId: string, fuzzyWords: string[] = []): Promise<WorkInfo | null> {
+export async function scrapeByTitle(title: string, localPath: string, workId: string): Promise<WorkInfo | null> {
     const getSearchQuery = (t: string) => t.replace(/[〇○×✕●■＊\*]/g, ' ').trim()
 
     // 検索実行関数
@@ -386,7 +379,7 @@ export async function scrapeByTitle(title: string, localPath: string, workId: st
                     const rjMatch = linkHref.match(/RJ\d{6,8}/i)
                     if (rjMatch) {
                         const rjCode = rjMatch[0].toUpperCase()
-                        if (isGoodMatch(title, linkTitle, fuzzyWords)) {
+                        if (isGoodMatch(title, linkTitle)) {
                             console.log(`[Scraper] Good match found: "${linkTitle}" -> ${rjCode}`)
                             const workInfo = await scrapeWorkInfo(rjCode, localPath)
                             if (workInfo) {
@@ -406,27 +399,7 @@ export async function scrapeByTitle(title: string, localPath: string, workId: st
     let result = await performSearch(getSearchQuery(title))
     if (result) return result
 
-    // 2. ユーザー指定キーワードによる「穴あけ検索」
-    let fuzzyFilterQuery = title
-    let hasFuzzyWord = false
-    for (const word of fuzzyWords) {
-        if (word && title.toLowerCase().includes(word.toLowerCase())) {
-            const escapedWord = word.replace(/[.+*?^${}()|[\]\\]/g, '\\$&')
-            fuzzyFilterQuery = fuzzyFilterQuery.replace(new RegExp(escapedWord, 'gi'), ' ')
-            hasFuzzyWord = true
-        }
-    }
-
-    if (hasFuzzyWord) {
-        const finalFuzzyQuery = fuzzyFilterQuery.replace(/[〇○×✕●■＊\*]/g, ' ').replace(/\s+/g, ' ').trim()
-        if (finalFuzzyQuery && finalFuzzyQuery !== getSearchQuery(title)) {
-            console.log(`[Scraper] Trying fuzzy word hole-punch query: "${finalFuzzyQuery}"`)
-            result = await performSearch(finalFuzzyQuery)
-            if (result) return result
-        }
-    }
-
-    // 3. カタカナ部分をスペースに置き換えた「ゆるい検索」を試行
+    // 2. カタカナ部分をスペースに置き換えた「ゆるい検索」を試行
     const relaxedQuery = title.replace(/[ァ-ヶー]{2,}/g, ' ')
         .replace(/[〇○×✕●■＊\*]/g, ' ')
         .replace(/\s+/g, ' ')
@@ -443,7 +416,7 @@ export async function scrapeByTitle(title: string, localPath: string, workId: st
 /**
  * Google Books APIで書籍情報を検索
  */
-export async function scrapeFromGoogleBooks(title: string, localPath: string, workId: string, fuzzyWords: string[] = []): Promise<WorkInfo | null> {
+export async function scrapeFromGoogleBooks(title: string, localPath: string, workId: string): Promise<WorkInfo | null> {
     const getSearchQuery = (t: string) => t.replace(/[〇○×✕●■＊\*]/g, ' ').trim()
 
     const performSearch = async (query: string): Promise<WorkInfo | null> => {
@@ -460,7 +433,7 @@ export async function scrapeFromGoogleBooks(title: string, localPath: string, wo
             let selectedBook = null
             for (const item of data.items) {
                 const bookTitle = item.volumeInfo.title || ''
-                if (isGoodMatch(title, bookTitle, fuzzyWords)) {
+                if (isGoodMatch(title, bookTitle)) {
                     selectedBook = item.volumeInfo
                     console.log(`[Scraper] Found good match on Google Books: ${bookTitle}`)
                     break
@@ -496,32 +469,14 @@ export async function scrapeFromGoogleBooks(title: string, localPath: string, wo
         }
     }
 
-    let result = await performSearch(getSearchQuery(title))
-    if (result) return result
-
-    // ゆるい検索（穴あけ）
-    let fuzzyFilterQuery = title
-    let hasFuzzyWord = false
-    for (const word of fuzzyWords) {
-        if (word && title.toLowerCase().includes(word.toLowerCase())) {
-            const escapedWord = word.replace(/[.+*?^${}()|[\]\\]/g, '\\$&')
-            fuzzyFilterQuery = fuzzyFilterQuery.replace(new RegExp(escapedWord, 'gi'), ' ')
-            hasFuzzyWord = true
-        }
-    }
-    if (hasFuzzyWord) {
-        const finalFuzzyQuery = fuzzyFilterQuery.replace(/[〇○×✕●■＊\*]/g, ' ').replace(/\s+/g, ' ').trim()
-        result = await performSearch(finalFuzzyQuery)
-    }
-
-    return result
+    return await performSearch(getSearchQuery(title))
 }
 
 /**
  * タイトルから作品情報を取得（DLsite → Google Books の順で試行）
  */
-export async function scrapeByTitleWithFallback(title: string, localPath: string, workId: string, onlyDLsite: boolean = false, fuzzyWords: string[] = []): Promise<WorkInfo | null> {
-    const dlsiteResult = await scrapeByTitle(title, localPath, workId, fuzzyWords)
+export async function scrapeByTitleWithFallback(title: string, localPath: string, workId: string, onlyDLsite: boolean = false): Promise<WorkInfo | null> {
+    const dlsiteResult = await scrapeByTitle(title, localPath, workId)
     if (dlsiteResult) return dlsiteResult
 
     if (onlyDLsite) {
@@ -530,7 +485,7 @@ export async function scrapeByTitleWithFallback(title: string, localPath: string
     }
 
     console.log(`[Scraper] DLsite not found. Falling back to Google Books for: ${title}`)
-    return await scrapeFromGoogleBooks(title, localPath, workId, fuzzyWords)
+    return await scrapeFromGoogleBooks(title, localPath, workId)
 }
 
 /**

@@ -62,7 +62,6 @@ const DEFAULT_SETTINGS: AppSettings = {
     libraryPaths: [],
     autoScan: false,
     requestDelay: 1500, // 1.5秒
-    fuzzyWords: ['ロリ', 'ショタ'],
     viewerTheme: 'black',
     defaultBindingDirection: 'rtl',
 }
@@ -142,7 +141,6 @@ export function loadSettings(): AppSettings {
             const data = fs.readFileSync(filePath, 'utf-8')
             const settings = { ...DEFAULT_SETTINGS, ...JSON.parse(data) }
             // 新しい設定フィールドのデフォルト値適用
-            if (!settings.fuzzyWords) settings.fuzzyWords = [...DEFAULT_SETTINGS.fuzzyWords!]
             if (!settings.viewerTheme) settings.viewerTheme = DEFAULT_SETTINGS.viewerTheme
             if (!settings.defaultBindingDirection) settings.defaultBindingDirection = DEFAULT_SETTINGS.defaultBindingDirection
 
@@ -464,7 +462,7 @@ export async function scanAndUpdateLibrary(
                 try {
                     // DLsite → Google Books の順で検索（onlyDLsiteがtrueならDLsiteのみ）
                     console.log(`[Library] Searching for local work: "${titleFromFile}" (OnlyDLsite: ${onlyDLsite})`)
-                    const workInfo = await scrapeByTitleWithFallback(titleFromFile, folderPath, rjCode, onlyDLsite, settings.fuzzyWords || [])
+                    const workInfo = await scrapeByTitleWithFallback(titleFromFile, folderPath, rjCode, onlyDLsite)
 
                     if (workInfo) {
                         let finalRjCode = workInfo.rjCode

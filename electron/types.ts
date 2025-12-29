@@ -94,8 +94,6 @@ export interface AppSettings {
     autoScan: boolean
     /** スクレイピング時のリクエスト間隔（ミリ秒） */
     requestDelay: number
-    /** 伏字が含まれる可能性のある検索ワード */
-    fuzzyWords?: string[]
     /** ビューアのテーマ */
     viewerTheme?: 'black' | 'dark' | 'sepia' | 'white'
     /** デフォルトの綴じ方向 */

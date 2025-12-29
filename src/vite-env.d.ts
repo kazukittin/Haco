@@ -50,7 +50,6 @@ export interface AppSettings {
     libraryPaths: (string | LibraryPathConfig)[]
     autoScan: boolean
     requestDelay: number
-    fuzzyWords?: string[]
     viewerTheme?: 'black' | 'dark' | 'sepia' | 'white'
     defaultBindingDirection?: 'rtl' | 'ltr'
 }

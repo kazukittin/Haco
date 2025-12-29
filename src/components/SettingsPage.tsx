@@ -6,8 +6,7 @@ import {
     XIcon,
     SettingsIcon,
     ChevronLeftIcon,
-    TrashIcon,
-    TagIcon
+    TrashIcon
 } from '@/components/ui/icons'
 import type { AppSettings, ScanProgress, ScanResult } from '@/vite-env.d'
 
@@ -22,7 +21,6 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
     const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null)
     const [scanResult, setScanResult] = useState<ScanResult | null>(null)
     const [currentScanPath, setCurrentScanPath] = useState<string>('')
-    const [fuzzyInput, setFuzzyInput] = useState('')
     const [isResetting, setIsResetting] = useState(false)
 
     // 設定とスキャン状態を読み込む
@@ -154,32 +152,6 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
         }
     }
 
-    // 伏字キーワードを追加
-    const handleAddFuzzyWord = async () => {
-        if (!settings || !fuzzyInput.trim() || isScanning) return
-        if (settings.fuzzyWords?.includes(fuzzyInput.trim())) {
-            setFuzzyInput('')
-            return
-        }
-        const newSettings = {
-            ...settings,
-            fuzzyWords: [...(settings.fuzzyWords || []), fuzzyInput.trim()]
-        }
-        await window.electronAPI.saveSettings(newSettings)
-        setSettings(newSettings)
-        setFuzzyInput('')
-    }
-
-    // 伏字キーワードを削除
-    const handleRemoveFuzzyWord = async (word: string) => {
-        if (!settings || isScanning) return
-        const newSettings = {
-            ...settings,
-            fuzzyWords: (settings.fuzzyWords || []).filter(w => w !== word)
-        }
-        await window.electronAPI.saveSettings(newSettings)
-        setSettings(newSettings)
-    }
 
     if (!settings || isResetting) {
         return (
@@ -406,58 +378,6 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
                         </div>
                     </section>
 
-                    {/* 伏字検索キーワード設定セクション */}
-                    <section className="space-y-4 pt-4 border-t border-white/5">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h2 className="text-xl font-bold mb-1 font-outfit tracking-tight">伏字検索キーワード</h2>
-                                <p className="text-sm text-slate-400">
-                                    フォルダ名にこれらのワードが含まれる場合、伏せ字（〇や×）を考慮して柔軟に検索します。
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className={`bg-slate-900/50 border border-white/10 rounded-xl p-6 space-y-4 shadow-xl transition-opacity ${isScanning ? 'opacity-50 pointer-events-none' : ''}`}>
-                            <div className="flex gap-2">
-                                <input
-                                    type="text"
-                                    value={fuzzyInput}
-                                    onChange={(e) => setFuzzyInput(e.target.value)}
-                                    placeholder="例: ロリ、ショタ、淫乱"
-                                    className="flex-1 bg-slate-800 border border-white/10 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500/30 transition-all placeholder:text-slate-600"
-                                    onKeyDown={(e) => e.key === 'Enter' && handleAddFuzzyWord()}
-                                />
-                                <Button
-                                    onClick={handleAddFuzzyWord}
-                                    className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 px-6"
-                                >
-                                    追加
-                                </Button>
-                            </div>
-
-                            <div className="flex flex-wrap gap-2">
-                                {settings.fuzzyWords?.map(word => (
-                                    <div
-                                        key={word}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/10 border border-purple-500/30 rounded-full text-sm text-purple-300 group hover:border-purple-500/60 transition-colors"
-                                    >
-                                        <TagIcon className="w-3 h-3 text-purple-400" />
-                                        <span>{word}</span>
-                                        <button
-                                            onClick={() => handleRemoveFuzzyWord(word)}
-                                            className="text-slate-500 hover:text-red-400 transition-colors ml-1"
-                                            title="削除"
-                                        >
-                                            <XIcon className="w-3.5 h-3.5" />
-                                        </button>
-                                    </div>
-                                ))}
-                                {(!settings.fuzzyWords || settings.fuzzyWords.length === 0) && (
-                                    <p className="text-xs text-slate-500 italic">キーワードが登録されていません。</p>
-                                )}
-                            </div>
-                        </div>
-                    </section>
 
                     {/* メンテナンスセクション */}
                     <section className="space-y-4 pt-4 border-t border-white/5">
