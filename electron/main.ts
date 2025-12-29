@@ -8,6 +8,7 @@ function createWindow() {
         width: 1200,
         height: 800,
         title: 'Haco',
+        icon: path.join(__dirname, '../icon/icon.png'),
         autoHideMenuBar: true,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),

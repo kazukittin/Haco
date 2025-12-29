@@ -58,10 +58,12 @@
     },
     "files": [
       "dist",
-      "dist-electron"
+      "dist-electron",
+      "icon"
     ],
     "win": {
       "target": "portable",
+      "icon": "icon/icon.png",
       "artifactName": "${productName}_v${version}.${ext}"
     }
   }
