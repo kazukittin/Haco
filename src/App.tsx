@@ -202,6 +202,11 @@ function App() {
         setSelectedWork(work)
     }, [])
 
+    // 作品の右クリック時
+    const handleWorkContextMenu = useCallback((work: WorkInfo) => {
+        setSelectedWork(work)
+    }, [])
+
     // ビューアを開く
     const handleOpenViewer = useCallback((work: WorkInfo) => {
         setSelectedWork(null)
@@ -376,6 +381,10 @@ function App() {
                                         key={work.rjCode}
                                         className="flex-shrink-0 w-36 group cursor-pointer"
                                         onClick={() => handleWorkClick(work)}
+                                        onContextMenu={(e) => {
+                                            e.preventDefault()
+                                            handleWorkContextMenu(work)
+                                        }}
                                     >
                                         <div className="aspect-[3/4] relative rounded-lg overflow-hidden bg-slate-800 mb-2 ring-2 ring-purple-500/30 group-hover:ring-purple-500/60 transition-all">
                                             {work.thumbnailUrl ? (
@@ -417,6 +426,7 @@ function App() {
                     <WorkGrid
                         works={filteredWorks}
                         onWorkClick={handleWorkClick}
+                        onWorkContextMenu={handleWorkContextMenu}
                         onPlay={handleOpenViewer}
                         isLoading={isLoading}
                     />

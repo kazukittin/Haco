@@ -4,11 +4,12 @@ import { WorkCard } from './WorkCard'
 interface WorkGridProps {
     works: WorkInfo[]
     onWorkClick?: (work: WorkInfo) => void
+    onWorkContextMenu?: (work: WorkInfo) => void
     onPlay?: (work: WorkInfo) => void
     isLoading?: boolean
 }
 
-export function WorkGrid({ works, onWorkClick, onPlay, isLoading = false }: WorkGridProps) {
+export function WorkGrid({ works, onWorkClick, onWorkContextMenu, onPlay, isLoading = false }: WorkGridProps) {
     if (isLoading) {
         return (
             <div className="flex-1 flex items-center justify-center">
@@ -59,6 +60,7 @@ export function WorkGrid({ works, onWorkClick, onPlay, isLoading = false }: Work
                         key={work.rjCode}
                         work={work}
                         onClick={onWorkClick}
+                        onContextMenu={onWorkContextMenu}
                         onPlay={onPlay}
                     />
                 ))}

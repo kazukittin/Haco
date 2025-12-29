@@ -359,9 +359,65 @@ export async function scanAndUpdateLibrary(
             return result
         }
 
-        // 既存のデータにない作品をフィルタリング
-        const newWorks = foundWorks.filter(w => !libraryData.works[w.rjCode])
-        const existingWorks = foundWorks.filter(w => libraryData.works[w.rjCode])
+        // 既存のデータに実パスが既に登録されていないか事前チェック
+        // リネームによってIDが変更されたLOCAL_作品などを検出し、IDを同期させる
+        for (const found of foundWorks) {
+            const existingByPath = Object.entries(libraryData.works).find(([id, work]) => work.localPath === found.folderPath)
+            if (existingByPath) {
+                const [oldId, oldWork] = existingByPath
+                if (oldId !== found.rjCode) {
+                    console.log(`[Library] Migrating renamed work to new ID: ${oldId} -> ${found.rjCode}`)
+
+                    // 情報が不完全な場合は、移行せず削除して新規取得対象にする
+                    const isPlaceholder =
+                        oldWork.circle === '未取得' ||
+                        oldWork.circle === 'エラー' ||
+                        oldWork.circle === '未登録' ||
+                        oldWork.circle === '未設定' ||
+                        oldWork.tags.includes('未取得') ||
+                        oldWork.tags.includes('エラー')
+
+                    if (isPlaceholder) {
+                        console.log(`[Library] Placeholder work detected during migration. Removing to trigger re-scrape.`)
+                    } else {
+                        // 正常なデータがある場合は引き継ぐ
+                        libraryData.works[found.rjCode] = { ...oldWork, rjCode: found.rjCode }
+                    }
+                    delete libraryData.works[oldId]
+                }
+            }
+        }
+
+        // 既存のデータにない作品、または情報取得に失敗している作品をフィルタリング
+        const newWorks = foundWorks.filter(w => {
+            const existing = libraryData.works[w.rjCode]
+            if (!existing) return true
+
+            // 情報が不完全な場合は再取得の対象にする
+            const isPlaceholder =
+                existing.circle === '未取得' ||
+                existing.circle === 'エラー' ||
+                existing.circle === '未登録' ||
+                existing.circle === '未設定' ||
+                existing.tags.includes('未取得') ||
+                existing.tags.includes('エラー') ||
+                (existing.rjCode.startsWith('RJ') && existing.circle === 'ローカル作品') // RJコードがあるのにローカル扱い
+
+            return isPlaceholder
+        })
+
+        // 既存の正常な作品
+        const existingWorks = foundWorks.filter(w => {
+            const existing = libraryData.works[w.rjCode]
+            return existing && !newWorks.some(nw => nw.rjCode === w.rjCode)
+        })
+
+        // 再スキャン対象の作品を一旦ライブラリから除外して、確実に上書きされるようにする
+        newWorks.forEach(w => {
+            if (libraryData.works[w.rjCode]) {
+                delete libraryData.works[w.rjCode]
+            }
+        })
 
         // 既存作品のパスを更新
         if (existingWorks.length > 0) {
@@ -749,14 +805,73 @@ export function updateReadingProgress(
  */
 export async function updateWorkInfo(rjCode: string, updates: Partial<WorkInfo>): Promise<boolean> {
     const data = loadLibraryData()
-    if (!data.works[rjCode]) {
+    const work = data.works[rjCode]
+    if (!work) {
         return false
     }
 
-    data.works[rjCode] = {
-        ...data.works[rjCode],
+    // タイトルが変更された場合、実ファイル名も変更を試みる
+    if (updates.title && updates.title !== work.title) {
+        const oldPath = work.localPath
+        if (fs.existsSync(oldPath)) {
+            try {
+                const dir = path.dirname(oldPath)
+                const ext = fs.statSync(oldPath).isDirectory() ? '' : path.extname(oldPath)
+
+                // ファイル名に使用できない文字を除去
+                const safeTitle = updates.title.replace(/[\\/:*?"<>|]/g, '_')
+
+                // RJコードが含まれている場合は、それを含めた形式にする（スキャン時に見失わないため）
+                let newFileName = ''
+                if (!work.rjCode.startsWith('LOCAL_')) {
+                    newFileName = `[${work.rjCode}] ${safeTitle}${ext}`
+                } else {
+                    newFileName = `${safeTitle}${ext}`
+                }
+
+                const newPath = path.join(dir, newFileName)
+
+                // 名前が変わる場合のみ実行
+                if (oldPath !== newPath) {
+                    // 同名ファイルが既にある場合は上書きを避ける
+                    if (!fs.existsSync(newPath)) {
+                        fs.renameSync(oldPath, newPath)
+                        console.log(`[Library] Renamed on disk: ${oldPath} -> ${newPath}`)
+                        work.localPath = newPath
+                    } else {
+                        console.warn(`[Library] Rename failed: file already exists at ${newPath}`)
+                    }
+                }
+            } catch (error) {
+                console.error('[Library] Error renaming file on disk:', error)
+                // ディスク上の名前変更に失敗しても、ライブラリデータ自体の更新は続行する
+            }
+        }
+    }
+
+    const oldRjCode = rjCode
+    let currentRjCode = rjCode
+    let updatedWork = {
+        ...work,
         ...updates
     }
+
+    // LOCAL_ 作品の場合、タイトルが変わると ID も変わる可能性があるため同期させる
+    if (rjCode.startsWith('LOCAL_') && updates.title) {
+        // タイトル変更後の新しいIDを生成
+        const baseNameForId = updates.title.replace(/[\\/:*?"<>|]/g, '_')
+        const newRjCode = generateWorkId(baseNameForId)
+
+        if (newRjCode !== rjCode) {
+            console.log(`[Library] Updating LOCAL work ID due to title change: ${rjCode} -> ${newRjCode}`)
+            updatedWork.rjCode = newRjCode
+            currentRjCode = newRjCode
+            // 古いエントリーを削除
+            delete data.works[oldRjCode]
+        }
+    }
+
+    data.works[currentRjCode] = updatedWork
 
     return saveLibraryData(data)
 }

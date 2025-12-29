@@ -7,10 +7,11 @@ import { HeartIcon } from '@/components/ui/icons'
 interface WorkCardProps {
     work: WorkInfo
     onClick?: (work: WorkInfo) => void
+    onContextMenu?: (work: WorkInfo) => void
     onPlay?: (work: WorkInfo) => void
 }
 
-export function WorkCard({ work, onClick, onPlay }: WorkCardProps) {
+export function WorkCard({ work, onClick, onContextMenu, onPlay }: WorkCardProps) {
     const [imageLoaded, setImageLoaded] = useState(false)
     const [imageError, setImageError] = useState(false)
 
@@ -20,10 +21,18 @@ export function WorkCard({ work, onClick, onPlay }: WorkCardProps) {
         }
     }
 
+    const handleContextMenu = (e: React.MouseEvent) => {
+        if (onContextMenu) {
+            e.preventDefault()
+            onContextMenu(work)
+        }
+    }
+
     return (
         <div
             className="group relative rounded-xl overflow-hidden bg-card border border-white/5 hover:border-purple-500/50 transition-all duration-300 cursor-pointer hover:-translate-y-1 hover:shadow-2xl hover:shadow-purple-500/20"
             onClick={handleClick}
+            onContextMenu={handleContextMenu}
         >
             {/* サムネイル画像 */}
             <div className="aspect-[3/4] relative overflow-hidden bg-slate-800">
