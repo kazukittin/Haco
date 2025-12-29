@@ -81,6 +81,11 @@ const electronAPI = {
         return ipcRenderer.invoke('library:updateReadingProgress', rjCode, currentPage, totalPages)
     },
 
+    /** 作品情報を更新 */
+    updateWorkInfo: (rjCode: string, updates: Partial<any>) => {
+        return ipcRenderer.invoke('library:updateWorkInfo', rjCode, updates)
+    },
+
     /** 最近読んだ作品を取得 */
     getRecentlyReadWorks: (limit?: number) => {
         return ipcRenderer.invoke('library:getRecentlyRead', limit)

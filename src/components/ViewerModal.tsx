@@ -7,6 +7,8 @@ import {
     ChevronRightIcon,
     BookOpenIcon,
     SinglePageIcon,
+    MaximizeIcon,
+    MinimizeIcon
 } from '@/components/ui/icons'
 
 interface ViewerModalProps {
@@ -16,9 +18,10 @@ interface ViewerModalProps {
     title: string
     rjCode: string
     initialPage?: number
+    thumbnailUrl?: string
 }
 
-export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialPage = 0 }: ViewerModalProps) {
+export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialPage = 0, thumbnailUrl }: ViewerModalProps) {
     const [viewerData, setViewerData] = useState<ViewerData | null>(null)
     const [currentPage, setCurrentPage] = useState(initialPage)
     const [initialLoading, setInitialLoading] = useState(true)
@@ -26,6 +29,9 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
     const [imageUrls, setImageUrls] = useState<Record<number, string>>({})
     const [isSpreadMode, setIsSpreadMode] = useState(false)
     const [overlayVisible, setOverlayVisible] = useState(true)
+    const [isFullScreen, setIsFullScreen] = useState(false)
+    const [theme, setTheme] = useState<'black' | 'dark' | 'sepia' | 'white'>('black')
+    const [binding, setBinding] = useState<'rtl' | 'ltr'>('rtl')
     const [error, setError] = useState<string | null>(null)
 
     // オートハイド用のタイマー
@@ -69,6 +75,12 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
                     setError('ビューアの初期化に失敗しました')
                     setInitialLoading(false)
                 })
+
+            // 初期設定の読み込み
+            window.electronAPI.getSettings().then(s => {
+                if (s.viewerTheme) setTheme(s.viewerTheme)
+                // 作品ごとの設定があれば優先（将来的に実装）
+            })
         }
 
         return () => {
@@ -154,11 +166,35 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
         }, 3000)
     }, [])
 
+    // 全画面切り替え
+    const toggleFullScreen = useCallback(() => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch((err) => {
+                console.error(`Error attempting to enable full-screen mode: ${err.message}`)
+            })
+        } else {
+            document.exitFullscreen()
+        }
+    }, [])
+
+    // 全画面状態の監視
+    useEffect(() => {
+        const handleFullscreenChange = () => {
+            setIsFullScreen(!!document.fullscreenElement)
+        }
+        document.addEventListener('fullscreenchange', handleFullscreenChange)
+        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+    }, [])
+
     // クリーンアップ
     useEffect(() => {
         return () => {
             if (overlayTimerRef.current) {
                 clearTimeout(overlayTimerRef.current)
+            }
+            // 閉じる時に全画面解除
+            if (document.fullscreenElement) {
+                document.exitFullscreen().catch(() => { })
             }
         }
     }, [])
@@ -200,16 +236,16 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
         const centerEnd = width * 0.6
 
         if (clickX < centerStart) {
-            // 左エリア → 前のページ
-            prevPage()
+            // 左エリア
+            binding === 'rtl' ? nextPage() : prevPage()
         } else if (clickX > centerEnd) {
-            // 右エリア → 次のページ
-            nextPage()
+            // 右エリア
+            binding === 'rtl' ? prevPage() : nextPage()
         } else {
             // 中央エリア → オーバーレイ切り替え
             setOverlayVisible(prev => !prev)
         }
-    }, [prevPage, nextPage])
+    }, [prevPage, nextPage, binding])
 
     // キーボード操作
     useEffect(() => {
@@ -220,12 +256,12 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
                 case 'ArrowRight':
                 case ' ': // Space
                     e.preventDefault()
-                    nextPage()
+                    binding === 'rtl' ? prevPage() : nextPage()
                     break
                 case 'ArrowLeft':
                 case 'Backspace':
                     e.preventDefault()
-                    prevPage()
+                    binding === 'rtl' ? nextPage() : prevPage()
                     break
                 case 'Escape':
                     onClose()
@@ -252,23 +288,44 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
         // スクロール量に応じてページ送り
         if (Math.abs(e.deltaY) > 30) {
             if (e.deltaY > 0) {
-                nextPage()
+                binding === 'rtl' ? prevPage() : nextPage()
             } else {
-                prevPage()
+                binding === 'rtl' ? nextPage() : prevPage()
             }
         }
-    }, [nextPage, prevPage])
+    }, [nextPage, prevPage, binding])
 
     if (!isOpen) return null
 
     // ページ情報
     const currentImageInfo = viewerData?.images[currentPage]
 
+    const getThemeClass = () => {
+        switch (theme) {
+            case 'black': return 'bg-black text-white'
+            case 'dark': return 'bg-[#121214] text-slate-200'
+            case 'sepia': return 'bg-[#f4ecd8] text-[#433422]'
+            case 'white': return 'bg-white text-black'
+            default: return 'bg-black text-white'
+        }
+    }
+
     return (
         <div
-            className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center overflow-hidden"
+            className={`fixed inset-0 z-[100] flex flex-col items-center justify-center overflow-hidden animate-in fade-in zoom-in-95 duration-300 ${getThemeClass()} ${!overlayVisible ? 'cursor-none' : ''}`}
             onMouseMove={handleMouseMove}
         >
+            {/* 非常にぼかした背景（サムネイルがある場合） */}
+            {thumbnailUrl && theme === 'black' && (
+                <>
+                    <div
+                        className="absolute inset-0 z-0 opacity-40 blur-[100px] scale-150 pointer-events-none"
+                        style={{ backgroundImage: `url(${thumbnailUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
+                    />
+                    <div className="absolute inset-0 z-0 bg-black/40 pointer-events-none" />
+                </>
+            )}
+
             {/* 画像表示エリア */}
             <div
                 ref={containerRef}
@@ -277,10 +334,22 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
                 onWheel={handleWheel}
             >
                 {initialLoading ? (
-                    // 初期ローディング
-                    <div className="flex flex-col items-center gap-4 text-white">
-                        <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
-                        <p className="text-lg">読み込み中...</p>
+                    // 初期ローディング: サムネイルがあればそれを表示して「即座感」を出す
+                    <div className="flex flex-col items-center gap-6 text-white z-10 animate-in fade-in duration-500">
+                        {thumbnailUrl ? (
+                            <div className="relative w-48 aspect-[3/4] shadow-2xl rounded-lg overflow-hidden border border-white/10 ring-4 ring-purple-500/20">
+                                <img src={thumbnailUrl} className="w-full h-full object-contain" alt="Loading placeholder" />
+                                <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+                                    <div className="w-10 h-10 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                        )}
+                        <div className="text-center">
+                            <p className="text-xl font-bold bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">読み込み中...</p>
+                            <p className="text-slate-500 text-sm mt-1">{title}</p>
+                        </div>
                     </div>
                 ) : error ? (
                     // エラー表示
@@ -293,15 +362,15 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
                     </div>
                 ) : viewerData ? (
                     // 画像表示
-                    <div className={`flex items-center justify-center gap-1 w-full h-full p-4 ${isSpreadMode ? 'flex-row-reverse' : ''}`}>
+                    <div className={`flex items-center justify-center gap-1 w-full h-full p-4 ${isSpreadMode ? (binding === 'rtl' ? 'flex-row-reverse' : 'flex-row') : ''}`}>
                         {/* 左ページ（見開きモード時） */}
-                        {isSpreadMode && currentPage + 1 < viewerData.totalImages && (
+                        {isSpreadMode && currentPage + (binding === 'rtl' ? 0 : 1) < viewerData.totalImages && (
                             <div className="flex-1 h-full flex items-center justify-end">
-                                {imageUrls[currentPage + 1] ? (
+                                {imageUrls[currentPage + (binding === 'rtl' ? 0 : 1)] ? (
                                     <img
-                                        src={imageUrls[currentPage + 1]}
+                                        src={imageUrls[currentPage + (binding === 'rtl' ? 0 : 1)]}
                                         className="max-h-full max-w-full object-contain"
-                                        alt={`Page ${currentPage + 2}`}
+                                        alt={`Page ${currentPage + (binding === 'rtl' ? 1 : 2)}`}
                                         draggable={false}
                                     />
                                 ) : (
@@ -312,25 +381,25 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
                             </div>
                         )}
 
-                        {/* 現在ページ（右ページ） */}
+                        {/* 現在ページ（または右ページ） */}
                         <div className={`h-full flex items-center ${isSpreadMode ? 'flex-1 justify-start' : 'justify-center w-full'}`}>
-                            {imageLoading && !imageUrls[currentPage] ? (
+                            {imageLoading && !imageUrls[currentPage + (isSpreadMode && binding === 'rtl' ? 1 : 0)] ? (
                                 // 現在ページのローディング
                                 <div className="flex flex-col items-center gap-3">
                                     <div className="w-10 h-10 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
-                                    <p className="text-white/60 text-sm">
+                                    <p className={`${theme === 'sepia' || theme === 'white' ? 'text-black/60' : 'text-white/60'} text-sm`}>
                                         {currentImageInfo?.filename || 'Loading...'}
                                     </p>
                                 </div>
-                            ) : imageUrls[currentPage] ? (
+                            ) : imageUrls[currentPage + (isSpreadMode && binding === 'rtl' ? 1 : 0)] ? (
                                 <img
-                                    src={imageUrls[currentPage]}
+                                    src={imageUrls[currentPage + (isSpreadMode && binding === 'rtl' ? 1 : 0)]}
                                     className="max-h-full max-w-full object-contain"
-                                    alt={`Page ${currentPage + 1}`}
+                                    alt={`Page ${currentPage + (isSpreadMode && binding === 'rtl' ? 2 : 1)}`}
                                     draggable={false}
                                 />
                             ) : (
-                                <div className="flex items-center justify-center w-full h-full text-white/40">
+                                <div className={`flex items-center justify-center w-full h-full ${theme === 'sepia' || theme === 'white' ? 'text-black/40' : 'text-white/40'}`}>
                                     画像を読み込めませんでした
                                 </div>
                             )}
@@ -364,19 +433,53 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
             >
                 <div className="flex items-center justify-between">
                     <div className="flex-1 min-w-0 mr-4">
-                        <h2 className="text-white font-medium truncate">{title}</h2>
+                        <h2 className={`font-bold truncate ${theme === 'sepia' || theme === 'white' ? 'text-black' : 'text-white'}`}>{title}</h2>
                         {currentImageInfo && (
-                            <p className="text-white/50 text-xs truncate mt-1">
+                            <p className={`${theme === 'sepia' || theme === 'white' ? 'text-black/50' : 'text-white/50'} text-xs truncate mt-1`}>
                                 {currentImageInfo.filename}
                             </p>
                         )}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="flex items-center bg-black/40 backdrop-blur-md rounded-lg p-1 mr-2 border border-white/10">
+                            {(['black', 'dark', 'sepia', 'white'] as const).map(t => (
+                                <button
+                                    key={t}
+                                    onClick={() => setTheme(t)}
+                                    className={`w-6 h-6 rounded-md m-0.5 border ${theme === t ? 'border-purple-500 scale-110' : 'border-transparent'} transition-all`}
+                                    style={{
+                                        backgroundColor: t === 'black' ? '#000' : t === 'dark' ? '#121214' : t === 'sepia' ? '#f4ecd8' : '#fff'
+                                    }}
+                                    title={`テーマ: ${t}`}
+                                />
+                            ))}
+                        </div>
+
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setBinding(prev => prev === 'rtl' ? 'ltr' : 'rtl')}
+                            className={`${theme === 'sepia' || theme === 'white' ? 'text-black' : 'text-white'} hover:bg-white/10`}
+                            title={binding === 'rtl' ? "右開き (マンガ風)" : "左開き (洋書風)"}
+                        >
+                            {binding === 'rtl' ? "右開き" : "左開き"}
+                        </Button>
+
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={toggleFullScreen}
+                            className={`${theme === 'sepia' || theme === 'white' ? 'text-black' : 'text-white'} hover:bg-white/10`}
+                            title={isFullScreen ? "全画面解除 (F11)" : "全画面表示 (F11)"}
+                        >
+                            {isFullScreen ? <MinimizeIcon className="mr-2" /> : <MaximizeIcon className="mr-2" />}
+                            {isFullScreen ? "通常表示" : "全画面"}
+                        </Button>
                         <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => setIsSpreadMode(!isSpreadMode)}
-                            className="text-white hover:bg-white/10"
+                            className={`${theme === 'sepia' || theme === 'white' ? 'text-black' : 'text-white'} hover:bg-white/10`}
                             title={isSpreadMode ? "単ページ表示 (F)" : "見開き表示 (F)"}
                         >
                             {isSpreadMode ? <SinglePageIcon className="mr-2" /> : <BookOpenIcon className="mr-2" />}
@@ -386,7 +489,7 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
                             variant="ghost"
                             size="icon"
                             onClick={onClose}
-                            className="text-white hover:bg-white/10 rounded-full"
+                            className={`${theme === 'sepia' || theme === 'white' ? 'text-black' : 'text-white'} hover:bg-white/10 rounded-full`}
                         >
                             <XIcon />
                         </Button>
@@ -396,25 +499,28 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
 
             {/* オーバーレイUI（フッター・シークバー） */}
             <div
-                className={`absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/80 to-transparent transition-opacity duration-300 ${overlayVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                className={`absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t ${theme === 'sepia' || theme === 'white' ? 'from-white/80' : 'from-black/80'} to-transparent transition-opacity duration-300 ${overlayVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex flex-col gap-4 max-w-4xl mx-auto">
                     {/* シークバー */}
                     {viewerData && (
                         <div className="flex items-center gap-4">
-                            <span className="text-white text-sm font-mono whitespace-nowrap min-w-[4rem] text-right">
+                            <span className={`text-sm font-mono whitespace-nowrap min-w-[4rem] text-right ${theme === 'sepia' || theme === 'white' ? 'text-black' : 'text-white'}`}>
                                 {currentPage + 1}
                             </span>
-                            <input
-                                type="range"
-                                min="0"
-                                max={viewerData.totalImages - 1}
-                                value={currentPage}
-                                onChange={(e) => goToPage(parseInt(e.target.value))}
-                                className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer accent-purple-500 hover:bg-white/30 transition-colors"
-                            />
-                            <span className="text-white text-sm font-mono whitespace-nowrap min-w-[4rem]">
+                            <div className="flex-1 relative group/slider">
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max={viewerData.totalImages - 1}
+                                    value={currentPage}
+                                    onChange={(e) => goToPage(parseInt(e.target.value))}
+                                    className={`w-full h-2 rounded-lg appearance-none cursor-pointer accent-purple-500 transition-colors ${theme === 'sepia' || theme === 'white' ? 'bg-black/10 hover:bg-black/20' : 'bg-white/20 hover:bg-white/30'}`}
+                                    style={{ direction: binding === 'rtl' ? 'rtl' : 'ltr' }}
+                                />
+                            </div>
+                            <span className={`text-sm font-mono whitespace-nowrap min-w-[4rem] ${theme === 'sepia' || theme === 'white' ? 'text-black' : 'text-white'}`}>
                                 {viewerData.totalImages}
                             </span>
                         </div>
@@ -425,23 +531,23 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
                         <Button
                             variant="ghost"
                             size="icon"
-                            onClick={prevPage}
-                            disabled={!viewerData || currentPage === 0}
-                            className="text-white hover:bg-white/10 rounded-full w-12 h-12 disabled:opacity-30"
+                            onClick={binding === 'rtl' ? nextPage : prevPage}
+                            disabled={!viewerData || (binding === 'rtl' ? (currentPage >= viewerData.totalImages - 1) : (currentPage === 0))}
+                            className={`${theme === 'sepia' || theme === 'white' ? 'text-black' : 'text-white'} hover:bg-white/10 rounded-full w-12 h-12 disabled:opacity-30`}
                         >
                             <ChevronLeftIcon className="w-6 h-6" />
                         </Button>
 
-                        <div className="text-white/60 text-sm px-4 py-1 bg-white/5 rounded-full">
-                            {isSpreadMode ? "見開き" : "単ページ"} • ← → で移動 • F で切替
+                        <div className={`text-sm px-4 py-1 rounded-full ${theme === 'sepia' || theme === 'white' ? 'bg-black/5 text-black/60' : 'bg-white/5 text-white/60'}`}>
+                            {binding === 'rtl' ? "右開き" : "左開き"} • {isSpreadMode ? "見開き" : "単ページ"} • ← → で移動
                         </div>
 
                         <Button
                             variant="ghost"
                             size="icon"
-                            onClick={nextPage}
-                            disabled={!viewerData || currentPage >= viewerData.totalImages - 1}
-                            className="text-white hover:bg-white/10 rounded-full w-12 h-12 disabled:opacity-30"
+                            onClick={binding === 'rtl' ? prevPage : nextPage}
+                            disabled={!viewerData || (binding === 'rtl' ? (currentPage === 0) : (currentPage >= viewerData.totalImages - 1))}
+                            className={`${theme === 'sepia' || theme === 'white' ? 'text-black' : 'text-white'} hover:bg-white/10 rounded-full w-12 h-12 disabled:opacity-30`}
                         >
                             <ChevronRightIcon className="w-6 h-6" />
                         </Button>

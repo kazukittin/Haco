@@ -23,6 +23,7 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
     const [scanResult, setScanResult] = useState<ScanResult | null>(null)
     const [currentScanPath, setCurrentScanPath] = useState<string>('')
     const [fuzzyInput, setFuzzyInput] = useState('')
+    const [isResetting, setIsResetting] = useState(false)
 
     // 設定とスキャン状態を読み込む
     useEffect(() => {
@@ -136,12 +137,24 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
         const confirmed = window.confirm('すべての設定、ライブラリデータ、キャッシュを完全に削除しますか？\nこの操作は取り消せません。実行後、アプリは自動的に再起動します。')
 
         if (confirmed) {
+            setIsResetting(true)
             try {
+                // ファイル削除
                 await window.electronAPI.resetApp()
-                await window.electronAPI.relaunch()
+
+                // 少し待ってから再起動
+                setTimeout(async () => {
+                    try {
+                        await window.electronAPI.relaunch()
+                    } catch (e) {
+                        console.error('Relaunch failed:', e)
+                        alert('アプリの再起動に失敗しました。手動でアプリを再起動してください。')
+                    }
+                }, 500)
             } catch (error) {
                 console.error('Reset error:', error)
                 alert('リセット中にエラーが発生しました。')
+                setIsResetting(false)
             }
         }
     }
@@ -173,11 +186,14 @@ export function SettingsPage({ onBack, onScanComplete }: SettingsPageProps) {
         setSettings(newSettings)
     }
 
-    if (!settings) {
+    if (!settings || isResetting) {
         return (
-            <div className="flex-1 flex items-center justify-center text-slate-400">
-                <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mr-2" />
-                設定を読み込み中...
+            <div className="h-screen flex flex-col items-center justify-center bg-slate-950 text-slate-400">
+                <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-4" />
+                <div className="text-lg font-medium text-white mb-2">
+                    {isResetting ? 'データを初期化中...' : '設定を読み込み中...'}
+                </div>
+                {isResetting && <p className="text-sm">間もなくアプリを再起動します。</p>}
             </div>
         )
     }

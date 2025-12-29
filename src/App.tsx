@@ -417,6 +417,7 @@ function App() {
                     <WorkGrid
                         works={filteredWorks}
                         onWorkClick={handleWorkClick}
+                        onPlay={handleOpenViewer}
                         isLoading={isLoading}
                     />
                 </div>
@@ -440,6 +441,7 @@ function App() {
                     title={viewerWork.title}
                     rjCode={viewerWork.rjCode}
                     initialPage={viewerWork.lastReadPage || 0}
+                    thumbnailUrl={viewerWork.thumbnailUrl}
                 />
             )}
 

@@ -328,3 +328,88 @@ export const EyeOffIcon = ({ className, ...props }: IconProps) => (
         <line x1="2" x2="22" y1="2" y2="22" />
     </svg>
 )
+export const MaximizeIcon = ({ className, ...props }: IconProps) => (
+    <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={cn("w-4 h-4", className)}
+        {...props}
+    >
+        <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+        <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+        <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+        <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+    </svg>
+)
+
+export const MinimizeIcon = ({ className, ...props }: IconProps) => (
+    <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={cn("w-4 h-4", className)}
+        {...props}
+    >
+        <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+        <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+        <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+        <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+    </svg>
+)
+export const HeartIcon = ({ className, fill = "none", ...props }: IconProps & { fill?: string }) => (
+    <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill={fill}
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={cn("w-4 h-4", className)}
+        {...props}
+    >
+        <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
+    </svg>
+)
+
+export const PencilIcon = ({ className, ...props }: IconProps) => (
+    <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={cn("w-4 h-4", className)}
+        {...props}
+    >
+        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+        <path d="m15 5 4 4" />
+    </svg>
+)
+
+export const CheckIcon = ({ className, ...props }: IconProps) => (
+    <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={cn("w-4 h-4", className)}
+        {...props}
+    >
+        <polyline points="20 6 9 17 4 12" />
+    </svg>
+)

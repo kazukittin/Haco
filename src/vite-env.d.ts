@@ -21,6 +21,9 @@ export interface WorkInfo {
     lastReadPage?: number
     totalPages?: number
     sampleImages?: string[]
+    isFavorite?: boolean
+    readingStatus?: 'unread' | 'reading' | 'completed'
+    bindingDirection?: 'rtl' | 'ltr'
 }
 
 export interface LibraryData {
@@ -48,6 +51,8 @@ export interface AppSettings {
     autoScan: boolean
     requestDelay: number
     fuzzyWords?: string[]
+    viewerTheme?: 'black' | 'dark' | 'sepia' | 'white'
+    defaultBindingDirection?: 'rtl' | 'ltr'
 }
 
 export interface ScanProgress {
@@ -106,6 +111,7 @@ interface ElectronAPI {
     deleteWorkWithFiles: (rjCode: string) => Promise<{ success: boolean; error?: string }>
     cleanupMissingWorks: () => Promise<{ removed: string[]; errors: string[] }>
     updateReadingProgress: (rjCode: string, currentPage: number, totalPages: number) => Promise<boolean>
+    updateWorkInfo: (rjCode: string, updates: Partial<WorkInfo>) => Promise<boolean>
     getRecentlyReadWorks: (limit?: number) => Promise<WorkInfo[]>
     onScanProgress: (callback: (data: ScanProgress) => void) => () => void
     onLibraryUpdated: (callback: () => void) => () => void

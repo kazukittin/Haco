@@ -4,10 +4,11 @@ import { WorkCard } from './WorkCard'
 interface WorkGridProps {
     works: WorkInfo[]
     onWorkClick?: (work: WorkInfo) => void
+    onPlay?: (work: WorkInfo) => void
     isLoading?: boolean
 }
 
-export function WorkGrid({ works, onWorkClick, isLoading = false }: WorkGridProps) {
+export function WorkGrid({ works, onWorkClick, onPlay, isLoading = false }: WorkGridProps) {
     if (isLoading) {
         return (
             <div className="flex-1 flex items-center justify-center">
@@ -54,7 +55,12 @@ export function WorkGrid({ works, onWorkClick, isLoading = false }: WorkGridProp
         <div className="flex-1 overflow-auto p-6">
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4">
                 {works.map((work) => (
-                    <WorkCard key={work.rjCode} work={work} onClick={onWorkClick} />
+                    <WorkCard
+                        key={work.rjCode}
+                        work={work}
+                        onClick={onWorkClick}
+                        onPlay={onPlay}
+                    />
                 ))}
             </div>
         </div>

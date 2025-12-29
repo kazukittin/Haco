@@ -36,6 +36,12 @@ export interface WorkInfo {
     totalPages?: number
     /** サンプル画像URL一覧 */
     sampleImages?: string[]
+    /** お気に入りフラグ */
+    isFavorite?: boolean
+    /** 読書ステータス */
+    readingStatus?: 'unread' | 'reading' | 'completed'
+    /** 綴じ方向 */
+    bindingDirection?: 'rtl' | 'ltr'
 }
 
 /**
@@ -90,6 +96,10 @@ export interface AppSettings {
     requestDelay: number
     /** 伏字が含まれる可能性のある検索ワード */
     fuzzyWords?: string[]
+    /** ビューアのテーマ */
+    viewerTheme?: 'black' | 'dark' | 'sepia' | 'white'
+    /** デフォルトの綴じ方向 */
+    defaultBindingDirection?: 'rtl' | 'ltr'
 }
 
 /**

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { WorkInfo } from '@/vite-env.d'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { XIcon, BookOpenIcon, FolderIcon, TrashIcon, EyeOffIcon, EyeIcon } from '@/components/ui/icons'
+import { XIcon, BookOpenIcon, FolderIcon, TrashIcon, EyeOffIcon, EyeIcon, HeartIcon, PencilIcon, CheckIcon } from '@/components/ui/icons'
 
 interface WorkDetailModalProps {
     work: WorkInfo | null
@@ -15,8 +15,45 @@ interface WorkDetailModalProps {
 export function WorkDetailModal({ work, onClose, onTagClick, onPlay, onRefresh }: WorkDetailModalProps) {
     const [isDeleting, setIsDeleting] = useState(false)
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+    const [isEditing, setIsEditing] = useState(false)
+    const [editData, setEditData] = useState<Partial<WorkInfo>>({})
 
     if (!work) return null
+
+    const handleToggleFavorite = async () => {
+        const favorite = !work.isFavorite
+        const success = await window.electronAPI.updateWorkInfo(work.rjCode, { isFavorite: favorite })
+        if (success) {
+            onRefresh?.()
+        }
+    }
+
+    const handleChangeStatus = async (status: 'unread' | 'reading' | 'completed') => {
+        const success = await window.electronAPI.updateWorkInfo(work.rjCode, { readingStatus: status })
+        if (success) {
+            onRefresh?.()
+        }
+    }
+
+    const startEditing = () => {
+        setEditData({
+            title: work.title,
+            circle: work.circle,
+            authors: work.authors,
+            tags: work.tags,
+            description: work.description,
+            bindingDirection: work.bindingDirection || 'rtl'
+        })
+        setIsEditing(true)
+    }
+
+    const saveEditing = async () => {
+        const success = await window.electronAPI.updateWorkInfo(work.rjCode, editData)
+        if (success) {
+            setIsEditing(false)
+            onRefresh?.()
+        }
+    }
 
     const handlePlayClick = () => {
         if (onPlay) {
@@ -151,68 +188,144 @@ export function WorkDetailModal({ work, onClose, onTagClick, onPlay, onRefresh }
 
                     {/* 右：詳細情報 */}
                     <div className="flex-1 p-6 overflow-y-auto">
-                        {/* RJコード */}
-                        <Badge variant="secondary" className="mb-3 bg-purple-600/20 text-purple-300 border-purple-500/30">
-                            {work.rjCode}
-                        </Badge>
+                        {/* RJコード & ステータス & お気に入り */}
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                                <Badge variant="secondary" className="bg-purple-600/20 text-purple-300 border-purple-500/30">
+                                    {work.rjCode}
+                                </Badge>
+                                <select
+                                    value={work.readingStatus || 'unread'}
+                                    onChange={(e) => handleChangeStatus(e.target.value as any)}
+                                    className="bg-slate-800 border border-white/10 rounded px-2 py-0.5 text-xs text-slate-300 hover:bg-slate-700 transition-colors cursor-pointer outline-none"
+                                >
+                                    <option value="unread">未読</option>
+                                    <option value="reading">読書中</option>
+                                    <option value="completed">読了</option>
+                                </select>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={isEditing ? saveEditing : startEditing}
+                                    className={`p-2 rounded-full transition-colors ${isEditing ? 'bg-green-600/20 text-green-400 hover:bg-green-600/40' : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'}`}
+                                    title={isEditing ? "保存" : "編集"}
+                                >
+                                    {isEditing ? <CheckIcon className="w-5 h-5" /> : <PencilIcon className="w-5 h-5" />}
+                                </button>
+                                <button
+                                    onClick={handleToggleFavorite}
+                                    className={`p-2 rounded-full transition-colors ${work.isFavorite ? 'bg-red-600/20 text-red-500 hover:bg-red-600/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'}`}
+                                >
+                                    <HeartIcon className="w-5 h-5" fill={work.isFavorite ? "currentColor" : "none"} />
+                                </button>
+                            </div>
+                        </div>
 
                         {/* タイトル */}
-                        <h2 className="text-2xl font-bold text-white mb-2">{work.title}</h2>
+                        {isEditing ? (
+                            <input
+                                value={editData.title || ''}
+                                onChange={(e) => setEditData({ ...editData, title: e.target.value })}
+                                className="w-full bg-slate-800 border border-purple-500/50 rounded-lg px-3 py-2 text-xl font-bold text-white mb-4 outline-none focus:ring-2 ring-purple-500/20"
+                                placeholder="タイトル"
+                            />
+                        ) : (
+                            <h2 className="text-2xl font-bold text-white mb-4 leading-tight">{work.title}</h2>
+                        )}
 
                         {/* サークル・作者 */}
-                        <div className="space-y-1 mb-4">
-                            {work.circle && (
-                                <p className="text-slate-400">
-                                    <span className="text-slate-500">サークル: </span>
-                                    {work.circle}
-                                </p>
-                            )}
-                            {work.authors.length > 0 && (
-                                <p className="text-slate-400">
-                                    <span className="text-slate-500">作者: </span>
-                                    {work.authors.join(', ')}
-                                </p>
-                            )}
-                            {work.releaseDate && (
-                                <p className="text-slate-400">
-                                    <span className="text-slate-500">発売日: </span>
-                                    {work.releaseDate}
-                                </p>
-                            )}
-                            {work.workType && (
-                                <p className="text-slate-400">
-                                    <span className="text-slate-500">形式: </span>
-                                    {work.workType}
-                                </p>
-                            )}
+                        <div className="space-y-3 mb-6 bg-white/5 rounded-xl p-4 border border-white/5">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                    <p className="text-xs text-slate-500 mb-1">サークル</p>
+                                    {isEditing ? (
+                                        <input
+                                            value={editData.circle || ''}
+                                            onChange={(e) => setEditData({ ...editData, circle: e.target.value })}
+                                            className="w-full bg-slate-900 border border-white/10 rounded px-2 py-1 text-sm text-white"
+                                        />
+                                    ) : (
+                                        <p className="text-sm text-slate-300">{work.circle || '---'}</p>
+                                    )}
+                                </div>
+                                <div>
+                                    <p className="text-xs text-slate-500 mb-1">作者</p>
+                                    {isEditing ? (
+                                        <input
+                                            value={editData.authors?.join(', ') || ''}
+                                            onChange={(e) => setEditData({ ...editData, authors: e.target.value.split(',').map(s => s.trim()) })}
+                                            className="w-full bg-slate-900 border border-white/10 rounded px-2 py-1 text-sm text-white"
+                                            placeholder="カンマ区切り"
+                                        />
+                                    ) : (
+                                        <p className="text-sm text-slate-300">{work.authors.join(', ') || '---'}</p>
+                                    )}
+                                </div>
+                                <div>
+                                    <p className="text-xs text-slate-500 mb-1">形式</p>
+                                    <p className="text-sm text-slate-300">{work.workType || '---'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-slate-500 mb-1">綴じ方向</p>
+                                    {isEditing ? (
+                                        <select
+                                            value={editData.bindingDirection || 'rtl'}
+                                            onChange={(e) => setEditData({ ...editData, bindingDirection: e.target.value as any })}
+                                            className="w-full bg-slate-900 border border-white/10 rounded px-2 py-1 text-sm text-white"
+                                        >
+                                            <option value="rtl">右開き (マンガ)</option>
+                                            <option value="ltr">左開き (イラスト集など)</option>
+                                        </select>
+                                    ) : (
+                                        <p className="text-sm text-slate-300">{work.bindingDirection === 'ltr' ? '左開き' : '右開き'}</p>
+                                    )}
+                                </div>
+                            </div>
                         </div>
 
                         {/* タグ一覧 */}
-                        <div className="mb-4">
+                        <div className="mb-6">
                             <p className="text-xs text-slate-500 mb-2">タグ</p>
-                            <div className="flex flex-wrap gap-1.5">
-                                {work.tags.map((tag) => (
-                                    <Badge
-                                        key={tag}
-                                        variant="outline"
-                                        onClick={() => onTagClick?.(tag)}
-                                        className="text-xs bg-white/5 border-white/10 text-slate-300 hover:bg-purple-600 hover:border-purple-600 hover:text-white transition-colors cursor-pointer"
-                                    >
-                                        {tag}
-                                    </Badge>
-                                ))}
-                            </div>
+                            {isEditing ? (
+                                <textarea
+                                    value={editData.tags?.join(', ') || ''}
+                                    onChange={(e) => setEditData({ ...editData, tags: e.target.value.split(',').map(s => s.trim()).filter(s => s) })}
+                                    className="w-full bg-slate-900 border border-white/10 rounded px-2 py-2 text-sm text-white h-20"
+                                    placeholder="カンマ区切り"
+                                />
+                            ) : (
+                                <div className="flex flex-wrap gap-1.5">
+                                    {work.tags.map((tag) => (
+                                        <Badge
+                                            key={tag}
+                                            variant="outline"
+                                            onClick={() => onTagClick?.(tag)}
+                                            className="text-xs bg-white/5 border-white/10 text-slate-300 hover:bg-purple-600 hover:border-purple-600 hover:text-white transition-colors cursor-pointer"
+                                        >
+                                            {tag}
+                                        </Badge>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
                         {/* あらすじ */}
-                        {work.description && (
-                            <div className="mb-4">
-                                <p className="text-xs text-slate-500 mb-2">あらすじ</p>
-                                <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">
+                        <div className="mb-6">
+                            <p className="text-xs text-slate-500 mb-2">あらすじ</p>
+                            {isEditing ? (
+                                <textarea
+                                    value={editData.description || ''}
+                                    onChange={(e) => setEditData({ ...editData, description: e.target.value })}
+                                    className="w-full bg-slate-900 border border-white/10 rounded px-2 py-2 text-sm text-white h-40 leading-relaxed"
+                                />
+                            ) : work.description ? (
+                                <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-700">
                                     {work.description}
                                 </p>
-                            </div>
-                        )}
+                            ) : (
+                                <p className="text-sm text-slate-500 italic">あらすじはありません</p>
+                            )}
+                        </div>
 
                         {/* サンプル画像ギャラリー */}
                         {work.sampleImages && work.sampleImages.length > 0 && (

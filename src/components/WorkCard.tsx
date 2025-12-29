@@ -2,13 +2,15 @@ import { useState } from 'react'
 import type { WorkInfo } from '@/vite-env.d'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { HeartIcon } from '@/components/ui/icons'
 
 interface WorkCardProps {
     work: WorkInfo
     onClick?: (work: WorkInfo) => void
+    onPlay?: (work: WorkInfo) => void
 }
 
-export function WorkCard({ work, onClick }: WorkCardProps) {
+export function WorkCard({ work, onClick, onPlay }: WorkCardProps) {
     const [imageLoaded, setImageLoaded] = useState(false)
     const [imageError, setImageError] = useState(false)
 
@@ -58,12 +60,33 @@ export function WorkCard({ work, onClick }: WorkCardProps) {
                     </div>
                 )}
 
+                {/* ステータスバッジ */}
+                {work.readingStatus && work.readingStatus !== 'unread' && (
+                    <div className={`absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px] font-bold shadow-lg ${work.readingStatus === 'completed' ? 'bg-green-600 text-white' : 'bg-blue-600 text-white'
+                        }`}>
+                        {work.readingStatus === 'completed' ? '読了' : '読書中'}
+                    </div>
+                )}
+
+                {/* お気に入りアイコン */}
+                {work.isFavorite && (
+                    <div className="absolute top-2 left-2 pointer-events-none drop-shadow-lg z-10" style={{ transform: work.readingStatus && work.readingStatus !== 'unread' ? 'translateY(24px)' : '' }}>
+                        <HeartIcon className="w-5 h-5 text-red-500" fill="currentColor" />
+                    </div>
+                )}
+
                 {/* ホバー時のオーバーレイ */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                     <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="px-6 py-3 rounded-full bg-purple-600 flex items-center justify-center transform scale-75 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-300 shadow-lg shadow-purple-500/50">
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                onPlay?.(work)
+                            }}
+                            className="px-6 py-3 rounded-full bg-purple-600 flex items-center justify-center transform scale-75 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-300 shadow-lg shadow-purple-500/50 hover:bg-purple-500 hover:scale-110 active:scale-95"
+                        >
                             <span className="text-white font-medium text-sm">読む</span>
-                        </div>
+                        </button>
                     </div>
                 </div>
 

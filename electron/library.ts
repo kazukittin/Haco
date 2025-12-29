@@ -63,6 +63,8 @@ const DEFAULT_SETTINGS: AppSettings = {
     autoScan: false,
     requestDelay: 1500, // 1.5秒
     fuzzyWords: ['ロリ', 'ショタ'],
+    viewerTheme: 'black',
+    defaultBindingDirection: 'rtl',
 }
 
 /**
@@ -139,10 +141,11 @@ export function loadSettings(): AppSettings {
         if (fs.existsSync(filePath)) {
             const data = fs.readFileSync(filePath, 'utf-8')
             const settings = { ...DEFAULT_SETTINGS, ...JSON.parse(data) }
-            // fuzzyWordsがない古い設定ファイル対策
-            if (!settings.fuzzyWords) {
-                settings.fuzzyWords = [...DEFAULT_SETTINGS.fuzzyWords!]
-            }
+            // 新しい設定フィールドのデフォルト値適用
+            if (!settings.fuzzyWords) settings.fuzzyWords = [...DEFAULT_SETTINGS.fuzzyWords!]
+            if (!settings.viewerTheme) settings.viewerTheme = DEFAULT_SETTINGS.viewerTheme
+            if (!settings.defaultBindingDirection) settings.defaultBindingDirection = DEFAULT_SETTINGS.defaultBindingDirection
+
             return settings
         }
     } catch (error) {
@@ -739,6 +742,23 @@ export function updateReadingProgress(
     saveLibraryData(libraryData)
     console.log(`[Library] Updated reading progress: ${rjCode} - Page ${currentPage + 1}/${totalPages}`)
     return true
+}
+
+/**
+ * 作品情報を更新する
+ */
+export async function updateWorkInfo(rjCode: string, updates: Partial<WorkInfo>): Promise<boolean> {
+    const data = loadLibraryData()
+    if (!data.works[rjCode]) {
+        return false
+    }
+
+    data.works[rjCode] = {
+        ...data.works[rjCode],
+        ...updates
+    }
+
+    return saveLibraryData(data)
 }
 
 /**

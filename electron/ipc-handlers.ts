@@ -14,6 +14,7 @@ import {
     deleteWorkWithFiles,
     cleanupMissingWorks,
     updateReadingProgress,
+    updateWorkInfo,
     getRecentlyReadWorks,
     setupFolderWatcher,
     isScanning,
@@ -131,6 +132,11 @@ export function registerIPCHandlers(): void {
         return updateReadingProgress(rjCode, currentPage, totalPages)
     })
 
+    // 作品情報を更新
+    ipcMain.handle('library:updateWorkInfo', (_event, rjCode: string, updates: Partial<any>) => {
+        return updateWorkInfo(rjCode, updates)
+    })
+
     // 最近読んだ作品を取得
     ipcMain.handle('library:getRecentlyRead', (_event, limit?: number) => {
         return getRecentlyReadWorks(limit)
@@ -211,8 +217,12 @@ export function registerIPCHandlers(): void {
 
     // アプリを再起動
     ipcMain.handle('system:relaunch', () => {
-        app.relaunch()
-        app.exit(0)
+        // レンダラーにレスポンスを返してから再起動を実行
+        setTimeout(() => {
+            app.relaunch()
+            app.exit(0)
+        }, 100)
+        return true
     })
 
     console.log('[IPC] All handlers registered')
