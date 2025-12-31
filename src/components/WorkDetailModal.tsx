@@ -18,7 +18,6 @@ import {
     LibraryIcon,
     ChevronLeftIcon,
     ChevronRightIcon,
-    GridIcon
 } from '@/components/ui/icons'
 
 interface WorkDetailModalProps {
@@ -50,7 +49,6 @@ export function WorkDetailModal({
 
     // 画像ギャラリー用のステート
     const [currentImageIndex, setCurrentImageIndex] = useState(0)
-    const [isGalleryMode, setIsGalleryMode] = useState(false)
 
     // 表示する画像リスト（サンプルのみ）
     const sampleImages = useMemo(() => {
@@ -61,8 +59,11 @@ export function WorkDetailModal({
     useEffect(() => {
         if (work) {
             setTimeout(() => setAnimateShow(true), 10)
-            setCurrentImageIndex(0)
-            setIsGalleryMode(false) // 作品が変わったらサムネ表示に戻す
+            setCurrentImageIndex(0) // 作品が変わったらインデックスをリセット
+            // 作品が変わったら編集状態もリセット
+            setIsEditing(false)
+            setEditData({})
+            setShowDeleteConfirm(false)
         } else {
             setAnimateShow(false)
         }
@@ -148,14 +149,19 @@ export function WorkDetailModal({
         }
     }
 
+    // ギャラリーナビゲーション
     const nextImage = (e: React.MouseEvent) => {
         e.stopPropagation()
-        setCurrentImageIndex((prev) => (prev + 1) % sampleImages.length)
+        if (sampleImages.length > 0) {
+            setCurrentImageIndex((prev) => (prev + 1) % sampleImages.length)
+        }
     }
 
     const prevImage = (e: React.MouseEvent) => {
         e.stopPropagation()
-        setCurrentImageIndex((prev) => (prev - 1 + sampleImages.length) % sampleImages.length)
+        if (sampleImages.length > 0) {
+            setCurrentImageIndex((prev) => (prev - 1 + sampleImages.length) % sampleImages.length)
+        }
     }
 
     return (
@@ -180,7 +186,7 @@ export function WorkDetailModal({
                 {/* 閉じるボタン */}
                 <button
                     onClick={onClose}
-                    className="absolute top-6 left-6 z-50 p-2.5 rounded-full bg-black/40 hover:bg-black/60 border border-white/10 text-white/70 hover:text-white transition-all backdrop-blur-md"
+                    className="absolute top-6 left-6 z-[70] p-2.5 rounded-full bg-black/60 hover:bg-black/80 border border-white/10 text-white/70 hover:text-white transition-all backdrop-blur-md shadow-xl"
                 >
                     <XIcon className="w-5 h-5" />
                 </button>
@@ -233,24 +239,26 @@ export function WorkDetailModal({
                             {/* 背景発光 */}
                             <div className="absolute -inset-4 bg-purple-500/10 blur-3xl opacity-60 group-hover:opacity-100 transition-opacity duration-700" />
 
-                            <div className="h-full w-full rounded-2xl overflow-hidden shadow-2xl shadow-black/80 border border-white/10 relative z-10 bg-slate-950 group/imgarea">
-                                {!isGalleryMode || sampleImages.length === 0 ? (
+                            <div className="h-full w-full rounded-2xl overflow-hidden shadow-2xl shadow-black/80 border border-white/10 relative z-10 bg-slate-950">
+                                {sampleImages.length === 0 ? (
+                                    // サンプル画像がない場合はサムネイルを表示
                                     <img
                                         src={work.thumbnailUrl}
                                         alt={work.title}
                                         className="w-full h-full object-contain animate-in fade-in zoom-in-95 duration-500"
                                     />
                                 ) : (
+                                    // サンプル画像がある場合はギャラリーを表示
                                     <div className="w-full h-full relative">
                                         <img
                                             key={currentImageIndex}
                                             src={sampleImages[currentImageIndex]}
-                                            alt={`Sample ${currentImageIndex + 1} `}
+                                            alt={`Sample ${currentImageIndex + 1}`}
                                             className="w-full h-full object-contain animate-in fade-in zoom-in-95 duration-500"
                                         />
 
                                         {/* ギャラリーナビゲーション */}
-                                        <div className="absolute inset-0 z-20 flex items-center justify-between px-4">
+                                        <div className="absolute inset-0 z-20 flex items-center justify-between px-4 opacity-0 hover:opacity-100 transition-opacity duration-300">
                                             <button
                                                 onClick={prevImage}
                                                 className="w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 text-white backdrop-blur-md flex items-center justify-center transition-all hover:scale-110 active:scale-90 border border-white/10 shadow-xl"
@@ -275,27 +283,11 @@ export function WorkDetailModal({
                                             ))}
                                         </div>
 
+                                        {/* 画像カウンター */}
                                         <div className="absolute top-4 right-4 z-20 px-2.5 py-1 bg-black/70 backdrop-blur-md rounded-lg text-[10px] font-bold text-white/90 border border-white/10">
                                             {currentImageIndex + 1} / {sampleImages.length}
                                         </div>
                                     </div>
-                                )}
-
-                                {/* モード切替ボタン (サンプルがある場合のみ) */}
-                                {sampleImages.length > 0 && (
-                                    <button
-                                        onClick={() => setIsGalleryMode(!isGalleryMode)}
-                                        className="absolute bottom-6 right-6 z-30 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-[10px] font-black tracking-widest uppercase shadow-2xl shadow-purple-900/40 transition-all active:scale-95 border border-purple-400/30 flex items-center gap-2 group/mode"
-                                    >
-                                        {isGalleryMode ? (
-                                            <>サムネイルに戻る</>
-                                        ) : (
-                                            <>
-                                                <GridIcon className="w-3 h-3 group-hover/mode:rotate-90 transition-transform" />
-                                                ギャラリー ({sampleImages.length})
-                                            </>
-                                        )}
-                                    </button>
                                 )}
                             </div>
 
@@ -446,28 +438,25 @@ export function WorkDetailModal({
                                 )}
                             </div>
 
-                            <div className="flex gap-4">
-                                <div className="flex-1 bg-white/5 rounded-2xl p-4 border border-white/5 flex items-center gap-4 hover:bg-white/10 transition-all">
-                                    <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-400">
-                                        <CalendarIcon className="w-5 h-5" />
-                                    </div>
-                                    <div>
-                                        <p className="text-[8px] text-slate-500 font-black uppercase tracking-widest">Released</p>
-                                        <p className="text-xs font-bold text-slate-300">{work.releaseDate || 'Unknown'}</p>
-                                    </div>
+                            <div className="bg-white/5 rounded-[2rem] p-6 border border-white/5 relative overflow-hidden group/card hover:bg-white/10 transition-all">
+                                <div className="absolute -top-4 -right-4 p-8 opacity-5 group-hover/card:opacity-10 transition-opacity rotate-12">
+                                    <CalendarIcon className="w-20 h-20" />
                                 </div>
-                                <div className="flex-1 bg-white/5 rounded-2xl p-4 border border-white/5 flex items-center gap-4 hover:bg-white/10 transition-all">
-                                    <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400">
-                                        <TagIcon className="w-5 h-5" />
-                                    </div>
-                                    <button
-                                        onClick={() => work.workType && onWorkTypeClick?.(work.workType)}
-                                        className="text-left group/typeitem"
-                                    >
-                                        <p className="text-[8px] text-slate-500 font-black uppercase tracking-widest group-hover/typeitem:text-blue-400 transition-colors">Category</p>
-                                        <p className="text-xs font-bold text-slate-300 group-hover/typeitem:text-blue-300 transition-colors">{work.workType || 'Standard'}</p>
-                                    </button>
+                                <p className="text-[10px] text-orange-400 font-black uppercase tracking-[0.2em] mb-2">Released</p>
+                                <p className="text-xl font-bold text-slate-100">{work.releaseDate || 'Unknown'}</p>
+                            </div>
+
+                            <div className="bg-white/5 rounded-[2rem] p-6 border border-white/5 relative overflow-hidden group/card hover:bg-white/10 transition-all">
+                                <div className="absolute -top-4 -right-4 p-8 opacity-5 group-hover/card:opacity-10 transition-opacity -rotate-12">
+                                    <TagIcon className="w-20 h-20" />
                                 </div>
+                                <p className="text-[10px] text-blue-400 font-black uppercase tracking-[0.2em] mb-2">Category</p>
+                                <button
+                                    onClick={() => work.workType && onWorkTypeClick?.(work.workType)}
+                                    className="text-xl font-bold text-slate-100 hover:text-blue-400 transition-colors text-left"
+                                >
+                                    {work.workType || 'Standard'}
+                                </button>
                             </div>
 
                             {/* 綴じ方向設定 (編集時のみ目立つ) */}

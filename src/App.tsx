@@ -6,7 +6,7 @@ import { WorkDetailModal } from './components/WorkDetailModal'
 import { ViewerModal } from './components/ViewerModal'
 import { FilterModal } from './components/FilterModal'
 import { ScanStatus } from './components/ScanStatus'
-import { SettingsIcon, RefreshIcon, FilterIcon, XIcon, LibraryIcon, PlayIcon } from './components/ui/icons'
+import { SettingsIcon, RefreshIcon, FilterIcon, XIcon, PlayIcon } from './components/ui/icons'
 import { Button } from './components/ui/button'
 import { Badge } from './components/ui/badge'
 
@@ -82,11 +82,16 @@ function App() {
             .slice(0, 5)
     }, [allWorks])
 
+    // タグ除外ワード
+    const excludedTags = ['PDF同梱']
+
     // タグ一覧（使用頻度順）
     const tags: TagCount[] = useMemo(() => {
         const tagCounts = new Map<string, number>()
         allWorks.forEach((work) => {
             work.tags.forEach((tag) => {
+                // 除外ワードに含まれるタグはスキップ
+                if (excludedTags.includes(tag)) return
                 tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1)
             })
         })
@@ -335,7 +340,7 @@ function App() {
 
     // ライブラリ画面（メイン）
     return (
-        <div className="h-screen flex bg-slate-950 overflow-hidden">
+        <div className="h-screen flex flex-col bg-slate-950 overflow-hidden">
             {/* フィルターモーダル */}
             <FilterModal
                 isOpen={isFilterModalOpen}
@@ -354,112 +359,87 @@ function App() {
                 onClearFilters={handleClearFilters}
             />
 
-            {/* サイドバー - スリム化 */}
-            <aside className="w-20 h-full flex flex-col items-center py-6 bg-slate-900 border-r border-white/5 backdrop-blur-sm z-20">
-                <div
-                    className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-500/20 mb-10 cursor-pointer hover:scale-105 transition-transform"
-                    onClick={() => setCurrentView('library')}
-                >
-                    <span className="text-xl font-black text-white">H</span>
+            {/* ヘッダーバー */}
+            <header className="h-14 flex items-center justify-between px-6 border-b border-white/5 bg-slate-900/30 backdrop-blur-sm flex-shrink-0">
+                <div className="flex items-center gap-4">
+                    {(selectedTags.length > 0 || selectedCircle || searchQuery) ? (
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-500 uppercase tracking-widest font-black">Filtered</span>
+                            <div className="flex items-center gap-2">
+                                <Badge variant="secondary" className="bg-purple-500/10 text-purple-400 border-purple-500/20 px-3">
+                                    {filteredWorks.length} works
+                                </Badge>
+                                <button
+                                    onClick={handleClearFilters}
+                                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-500 hover:text-white transition-all"
+                                    title="フィルターを全解除"
+                                >
+                                    <XIcon className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <Badge variant="outline" className="border-white/10 text-slate-400">
+                            {allWorks.length} items
+                        </Badge>
+                    )}
                 </div>
 
-                <div className="flex flex-col gap-6 flex-1">
+                {/* ヘッダー右側のアクション */}
+                <div className="flex items-center gap-3">
+                    {/* ソートセレクタ */}
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-500">並び替え:</span>
+                        <select
+                            value={sortOption}
+                            onChange={(e) => setSortOption(e.target.value as typeof sortOption)}
+                            className="bg-slate-800/50 border border-white/10 rounded-md px-2 py-1 text-sm text-slate-300 focus:outline-none focus:border-purple-500/50 cursor-pointer"
+                        >
+                            <option value="addedDate">追加日（新しい順）</option>
+                            <option value="lastRead">最近読んだ順</option>
+                            <option value="releaseDate">発売日順</option>
+                            <option value="title">タイトル順</option>
+                            <option value="circle">サークル順</option>
+                        </select>
+                    </div>
+
+                    <div className="w-px h-6 bg-white/10" />
+
+                    {/* フィルターボタン */}
                     <button
                         onClick={() => setIsFilterModalOpen(true)}
-                        className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${isFilterModalOpen || selectedTags.length > 0 || searchQuery || selectedCircle ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'}`}
+                        className={`relative p-2 rounded-lg flex items-center justify-center transition-all ${isFilterModalOpen || selectedTags.length > 0 || searchQuery || selectedCircle ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'}`}
                         title="フィルター"
                     >
-                        <FilterIcon className="w-6 h-6" />
+                        <FilterIcon className="w-5 h-5" />
                         {(selectedTags.length > 0 || searchQuery || selectedCircle) && (
-                            <div className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-slate-900" />
+                            <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full" />
                         )}
                     </button>
 
-                    <button
-                        className="w-12 h-12 rounded-2xl bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white flex items-center justify-center transition-all"
-                        title="ライブラリ統計"
-                    >
-                        <LibraryIcon className="w-6 h-6" />
-                    </button>
-                </div>
-
-                <div className="mt-auto flex flex-col gap-4">
+                    {/* 更新ボタン */}
                     <button
                         onClick={handleHeaderScan}
                         disabled={isHeaderScanning}
-                        className={`w-12 h-12 rounded-2xl bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white flex items-center justify-center transition-all ${isHeaderScanning ? 'opacity-50' : ''}`}
+                        className={`p-2 rounded-lg bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white flex items-center justify-center transition-all ${isHeaderScanning ? 'opacity-50' : ''}`}
                         title="ライブラリを更新"
                     >
                         <RefreshIcon className={`w-5 h-5 ${isHeaderScanning ? 'animate-spin' : ''}`} />
                     </button>
 
+                    {/* 設定ボタン */}
                     <button
                         onClick={() => setCurrentView('settings')}
-                        className="w-12 h-12 rounded-2xl bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white flex items-center justify-center transition-all"
+                        className="p-2 rounded-lg bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white flex items-center justify-center transition-all"
                         title="設定"
                     >
-                        <SettingsIcon className="w-6 h-6" />
+                        <SettingsIcon className="w-5 h-5" />
                     </button>
                 </div>
-            </aside>
+            </header>
 
             {/* メインコンテンツ */}
             <main className="flex-1 flex flex-col overflow-hidden">
-                {/* ヘッダーバー */}
-                <header className="h-14 flex items-center justify-between px-6 border-b border-white/5 bg-slate-900/30 backdrop-blur-sm">
-                    <div className="flex items-center gap-4">
-                        <div className="md:hidden">
-                            {/* Mobile logo or toggle */}
-                        </div>
-                        <h2 className="text-xl font-bold text-white font-outfit">Library</h2>
-
-                        {(selectedTags.length > 0 || selectedCircle || searchQuery) ? (
-                            <div className="flex items-center gap-2">
-                                <span className="text-xs text-slate-500 ml-4 uppercase tracking-widest font-black">Filtered</span>
-                                <div className="flex items-center gap-2">
-                                    <Badge variant="secondary" className="bg-purple-500/10 text-purple-400 border-purple-500/20 px-3">
-                                        {filteredWorks.length} works
-                                    </Badge>
-                                    <button
-                                        onClick={handleClearFilters}
-                                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-500 hover:text-white transition-all"
-                                        title="フィルターを全解除"
-                                    >
-                                        <XIcon className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="flex items-center gap-2 ml-4">
-                                <span className="text-xs text-slate-500 uppercase tracking-widest font-black">Collection</span>
-                                <Badge variant="outline" className="border-white/10 text-slate-400">
-                                    {allWorks.length} items
-                                </Badge>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* ヘッダー右側のアクション */}
-                    <div className="flex items-center gap-3">
-                        {/* ソートセレクタ */}
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs text-slate-500">並び替え:</span>
-                            <select
-                                value={sortOption}
-                                onChange={(e) => setSortOption(e.target.value as typeof sortOption)}
-                                className="bg-slate-800/50 border border-white/10 rounded-md px-2 py-1 text-sm text-slate-300 focus:outline-none focus:border-purple-500/50 cursor-pointer"
-                            >
-                                <option value="addedDate">追加日（新しい順）</option>
-                                <option value="lastRead">最近読んだ順</option>
-                                <option value="releaseDate">発売日順</option>
-                                <option value="title">タイトル順</option>
-                                <option value="circle">サークル順</option>
-                            </select>
-                        </div>
-
-                        <div className="w-px h-6 bg-white/10" />
-                    </div>
-                </header>
 
                 {/* コンテンツエリア */}
                 <div className="flex-1 overflow-y-auto">
