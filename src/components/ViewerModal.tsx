@@ -562,8 +562,8 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
                         <Button
                             variant="ghost"
                             size="icon"
-                            onClick={binding === 'rtl' ? nextPage : prevPage}
-                            disabled={!viewerData || (binding === 'rtl' ? (currentPage >= viewerData.totalImages - 1) : (currentPage === 0))}
+                            onClick={binding === 'rtl' ? prevPage : nextPage}
+                            disabled={!viewerData || (binding === 'rtl' ? (currentPage === 0) : (currentPage >= viewerData.totalImages - 1))}
                             className={`${theme === 'sepia' || theme === 'white' ? 'text-black' : 'text-white'} hover:bg-white/10 rounded-full w-12 h-12 disabled:opacity-30`}
                         >
                             <ChevronLeftIcon className="w-6 h-6" />
@@ -576,8 +576,8 @@ export function ViewerModal({ isOpen, onClose, workPath, title, rjCode, initialP
                         <Button
                             variant="ghost"
                             size="icon"
-                            onClick={binding === 'rtl' ? prevPage : nextPage}
-                            disabled={!viewerData || (binding === 'rtl' ? (currentPage === 0) : (currentPage >= viewerData.totalImages - 1))}
+                            onClick={binding === 'rtl' ? nextPage : prevPage}
+                            disabled={!viewerData || (binding === 'rtl' ? (currentPage >= viewerData.totalImages - 1) : (currentPage === 0))}
                             className={`${theme === 'sepia' || theme === 'white' ? 'text-black' : 'text-white'} hover:bg-white/10 rounded-full w-12 h-12 disabled:opacity-30`}
                         >
                             <ChevronRightIcon className="w-6 h-6" />
