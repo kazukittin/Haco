@@ -12,8 +12,28 @@ const REQUEST_HEADERS = {
     'Upgrade-Insecure-Requests': '1',
 }
 
-// 伏文字などの記号
+// FANZAへのリクエストに使用するヘッダー（年齢認証Cookie付き）
+const FANZA_REQUEST_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'ja,en-US;q=0.7,en;q=0.3',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+    'Cookie': 'age_check_done=1',
+}
+
+// DLsiteのドメイン一覧
 const DLSITE_DOMAINS = ['maniax', 'home', 'girls', 'bl']
+
+// FANZAのサービス一覧（同人, 電子書籍, ビデオなど）
+const FANZA_SERVICES = [
+    { path: 'dc/doujin', name: '同人' },
+    { path: 'mono/book', name: '電子書籍' },
+    { path: 'digital/videoa', name: 'ビデオ' },
+    { path: 'digital/videoc', name: 'アニメ' },
+    { path: 'digital/pcgame', name: 'PCゲーム' },
+]
 
 // タグから除外するメタデータワード
 const EXCLUDED_TAG_WORDS = [
@@ -338,6 +358,221 @@ function parseDLsitePage(html: string, rjCode: string, localPath: string): WorkI
     }
 
     console.log(`[Scraper] Successfully scraped from DLsite: ${title} (${rjCode})`)
+    return workInfo
+}
+
+/**
+ * FANZAのURLを生成
+ */
+function getFanzaUrl(contentId: string, servicePath: string = 'dc/doujin'): string {
+    return `https://www.dmm.co.jp/${servicePath}/-/detail/=/cid=${contentId}/`
+}
+
+/**
+ * FANZAから作品情報をスクレイピング（コンテンツID指定）
+ */
+export async function scrapeFanzaWorkInfo(contentId: string, localPath: string): Promise<WorkInfo | null> {
+    // 複数のサービスを試行
+    for (const service of FANZA_SERVICES) {
+        const url = getFanzaUrl(contentId, service.path)
+
+        try {
+            console.log(`[Scraper] Fetching FANZA (${service.name}): ${url}`)
+
+            const response = await axios.get(url, {
+                headers: FANZA_REQUEST_HEADERS,
+                timeout: 15000,
+                maxRedirects: 5,
+                validateStatus: (status: number) => status < 500,
+            })
+
+            if (response.status === 200) {
+                // 年齢認証ページかどうかをチェック
+                if (response.data.includes('年齢認証') && !response.data.includes('product-info')) {
+                    console.log(`[Scraper] FANZA age verification page detected, retrying...`)
+                    continue
+                }
+
+                const result = parseFanzaPage(response.data, contentId, localPath)
+                if (result) {
+                    return result
+                }
+            }
+        } catch (error) {
+            console.log(`[Scraper] FANZA ${service.name} fetch error:`, error instanceof Error ? error.message : error)
+            continue
+        }
+    }
+
+    console.log(`[Scraper] Work not found on any FANZA service: ${contentId}`)
+    return null
+}
+
+/**
+ * FANZAのページHTMLをパースしてWorkInfoを生成
+ */
+function parseFanzaPage(html: string, contentId: string, localPath: string): WorkInfo | null {
+    const $ = cheerio.load(html)
+
+    // 作品タイトルの取得
+    const title = $('h1.productTitle__txt').text().trim() ||
+        $('h1#title').text().trim() ||
+        $('.hd-detail h1').text().trim() ||
+        $('meta[property="og:title"]').attr('content')?.trim() || ''
+
+    if (!title) {
+        console.log(`[Scraper] FANZA: Title not found for ${contentId}`)
+        return null
+    }
+
+    // サークル/メーカー名の取得
+    let circle = ''
+    $('a[href*="/article=maker/"]').each((_, elem) => {
+        const text = $(elem).text().trim()
+        if (text && !circle) {
+            circle = text
+        }
+    })
+    if (!circle) {
+        circle = $('td:contains("メーカー") + td a').text().trim() ||
+            $('td:contains("サークル名") + td a').text().trim() ||
+            $('.maker a').text().trim() ||
+            'FANZA'
+    }
+
+    // 作者名の取得（複数の場合あり）
+    const authors: string[] = []
+    $('a[href*="/article=author/"]').each((_, elem) => {
+        const author = $(elem).text().trim()
+        if (author && !authors.includes(author)) {
+            authors.push(author)
+        }
+    })
+
+    // タグ（ジャンル）一覧の取得
+    const tags: string[] = []
+    $('a[href*="/article=keyword/"]').each((_, elem) => {
+        const tag = $(elem).text().trim()
+        if (tag && !tags.includes(tag) && !EXCLUDED_TAG_WORDS.includes(tag)) {
+            tags.push(tag)
+        }
+    })
+    // ジャンルリンクからも取得
+    $('a[href*="/genre/"]').each((_, elem) => {
+        const tag = $(elem).text().trim()
+        if (tag && !tags.includes(tag) && !EXCLUDED_TAG_WORDS.includes(tag)) {
+            tags.push(tag)
+        }
+    })
+
+    // あらすじの取得
+    let description = ''
+    const descElement = $('.summary__txt, .text--overflow, .detail-story-wrapper')
+    if (descElement.length) {
+        description = descElement.first().text().trim()
+    }
+    if (!description) {
+        description = $('meta[property="og:description"]').attr('content')?.trim() || ''
+    }
+
+    // サムネイル画像URLの取得
+    let thumbnailUrl = ''
+    const thumbnailSelectors = [
+        '.package-image img',
+        '#package-img img',
+        '.productImage img',
+        'meta[property="og:image"]',
+    ]
+
+    for (const selector of thumbnailSelectors) {
+        const element = $(selector).first()
+        if (element.length) {
+            if (selector.startsWith('meta')) {
+                thumbnailUrl = element.attr('content') || ''
+            } else {
+                thumbnailUrl = element.attr('src') || element.attr('data-src') || ''
+            }
+            if (thumbnailUrl) break
+        }
+    }
+
+    // 相対URLを絶対URLに変換
+    if (thumbnailUrl && !thumbnailUrl.startsWith('http')) {
+        thumbnailUrl = `https:${thumbnailUrl}`
+    }
+
+    console.log(`[Scraper] FANZA Thumbnail URL: ${thumbnailUrl}`)
+
+    // 発売日の取得
+    let releaseDate = ''
+    $('td:contains("配信開始日"), td:contains("発売日")').each((_, elem) => {
+        const nextTd = $(elem).next('td')
+        if (nextTd.length) {
+            releaseDate = nextTd.text().trim()
+        }
+    })
+
+    // 年齢レーティング（FANZAは基本18禁）
+    const ageRating = '18禁'
+
+    // 作品形式の判定
+    let workType = 'その他'
+    const workTypeKeywords: Record<string, string> = {
+        'マンガ': 'マンガ',
+        '漫画': 'マンガ',
+        'CG': 'CG・イラスト',
+        'イラスト': 'CG・イラスト',
+        'ゲーム': 'ゲーム',
+        'RPG': 'ゲーム',
+        'ノベル': 'ノベル',
+        'ボイス': 'ボイス',
+        'ASMR': 'ボイス',
+        '音声': 'ボイス',
+        '動画': '動画',
+        'アニメ': '動画',
+    }
+
+    for (const tag of tags) {
+        for (const [keyword, type] of Object.entries(workTypeKeywords)) {
+            if (tag.includes(keyword)) {
+                workType = type
+                break
+            }
+        }
+        if (workType !== 'その他') break
+    }
+
+    // サンプル画像の取得
+    const sampleImages: string[] = []
+    $('.swiper-slide img, .sample-image-wrap img, .sample-img img').each((_, element) => {
+        let imgUrl = $(element).attr('data-src') || $(element).attr('src') || ''
+        if (imgUrl && !imgUrl.startsWith('http')) {
+            imgUrl = `https:${imgUrl}`
+        }
+        if (imgUrl && !sampleImages.includes(imgUrl)) {
+            sampleImages.push(imgUrl)
+        }
+    })
+
+    console.log(`[Scraper] FANZA: Found ${sampleImages.length} sample images`)
+
+    const workInfo: WorkInfo = {
+        rjCode: contentId, // FANZAのコンテンツIDをrjCodeとして使用
+        title,
+        circle,
+        authors,
+        tags,
+        description: description.slice(0, 1000),
+        thumbnailUrl,
+        localPath,
+        fetchedAt: new Date().toISOString(),
+        releaseDate,
+        ageRating,
+        workType,
+        sampleImages: sampleImages.slice(0, 10),
+    }
+
+    console.log(`[Scraper] Successfully scraped from FANZA: ${title} (${contentId})`)
     return workInfo
 }
 

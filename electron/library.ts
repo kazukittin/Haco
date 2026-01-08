@@ -3,7 +3,7 @@ import * as path from 'path'
 import { app, webContents } from 'electron'
 import * as chokidar from 'chokidar'
 import type { LibraryData, WorkInfo, ScanResult, AppSettings } from './types'
-import { scrapeWorkInfo, scrapeByTitleWithFallback } from './scraper'
+import { scrapeWorkInfo, scrapeByTitleWithFallback, scrapeFanzaWorkInfo } from './scraper'
 import { getViewerData, getImageData } from './viewer'
 
 /**
@@ -48,6 +48,10 @@ export function isScanning(): boolean {
 
 // RJコードの正規表現（RJ + 6〜8桁の数字）
 const RJ_CODE_REGEX = /RJ\d{6,8}/i
+
+// FANZAコンテンツIDの正規表現（d_XXXXXX または h_XXXXXXXX など）
+// 形式: プレフィックス(d, h, cid等) + アンダースコア + 数字/文字
+const FANZA_ID_REGEX = /[dh]_[a-z0-9]+/i
 
 // ライブラリデータのデフォルト値
 const DEFAULT_LIBRARY_DATA: LibraryData = {
@@ -208,6 +212,14 @@ export function extractRJCode(folderName: string): string | null {
 }
 
 /**
+ * フォルダ名からFANZAコンテンツIDを抽出
+ */
+export function extractFanzaId(folderName: string): string | null {
+    const match = folderName.match(FANZA_ID_REGEX)
+    return match ? match[0].toLowerCase() : null
+}
+
+/**
  * ファイル名から一意のIDを生成（RJコードがない場合用）
  */
 function generateWorkId(name: string): string {
@@ -246,9 +258,9 @@ function isArchiveFile(filename: string): boolean {
 /**
  * 指定フォルダ内のサブフォルダとZIPファイルをスキャン
  */
-export function scanFolderForWorks(folderPath: string): Array<{ rjCode: string; folderPath: string; isArchive?: boolean }> {
+export function scanFolderForWorks(folderPath: string): Array<{ rjCode: string; folderPath: string; isArchive?: boolean; isFanza?: boolean }> {
     console.log(`[Library] Scanning folder: ${folderPath}`)
-    const results: Array<{ rjCode: string; folderPath: string; isArchive?: boolean }> = []
+    const results: Array<{ rjCode: string; folderPath: string; isArchive?: boolean; isFanza?: boolean }> = []
 
     try {
         if (!fs.existsSync(folderPath)) {
@@ -265,14 +277,24 @@ export function scanFolderForWorks(folderPath: string): Array<{ rjCode: string; 
             if (entry.isDirectory()) {
                 // フォルダの場合
                 const rjCode = extractRJCode(entry.name)
+                const fanzaId = extractFanzaId(entry.name)
+
                 if (rjCode) {
-                    // RJコードがある場合
+                    // RJコードがある場合（DLsite作品）
                     results.push({
                         rjCode,
                         folderPath: fullPath,
                     })
+                } else if (fanzaId) {
+                    // FANZAコンテンツIDがある場合
+                    console.log(`[Library] Found FANZA ID: ${fanzaId}`)
+                    results.push({
+                        rjCode: fanzaId,
+                        folderPath: fullPath,
+                        isFanza: true,
+                    })
                 } else {
-                    // RJコードがない場合も登録（ファイル名ベースのID）
+                    // どちらもない場合はファイル名ベースのID
                     results.push({
                         rjCode: generateWorkId(entry.name),
                         folderPath: fullPath,
@@ -282,14 +304,25 @@ export function scanFolderForWorks(folderPath: string): Array<{ rjCode: string; 
                 // ZIPファイルの場合
                 console.log(`[Library] Found archive: ${entry.name}`)
                 const rjCode = extractRJCode(entry.name)
+                const fanzaId = extractFanzaId(entry.name)
+
                 if (rjCode) {
                     results.push({
                         rjCode,
                         folderPath: fullPath,
                         isArchive: true,
                     })
+                } else if (fanzaId) {
+                    // FANZAコンテンツIDがある場合
+                    console.log(`[Library] Found FANZA archive ID: ${fanzaId}`)
+                    results.push({
+                        rjCode: fanzaId,
+                        folderPath: fullPath,
+                        isArchive: true,
+                        isFanza: true,
+                    })
                 } else {
-                    // RJコードがない場合も登録
+                    // どちらもない場合はファイル名ベースのID
                     const workId = generateWorkId(entry.name)
                     console.log(`[Library] Registering with ID: ${workId}`)
                     results.push({
@@ -555,10 +588,75 @@ export async function scanAndUpdateLibrary(
                 continue
             }
 
-            // RJコードがある場合はスクレイピングを試行
+            // FANZAコンテンツID（d_, h_ など）の場合
+            const isFanza = newWorks[i].isFanza
+            if (isFanza) {
+                console.log(`[Library] Processing FANZA work: ${rjCode}`)
+
+                if (onProgress) {
+                    onProgress(i + 1, newWorks.length, rjCode, 'FANZAから取得中...')
+                }
+
+                try {
+                    const workInfo = await scrapeFanzaWorkInfo(rjCode, folderPath)
+
+                    if (workInfo) {
+                        libraryData.works[rjCode] = ensureThumbnail(workInfo)
+                        result.success++
+                        result.newWorks.push(rjCode)
+                        console.log(`[Library] Successfully fetched FANZA info: ${workInfo.title} (${rjCode})`)
+                    } else {
+                        // スクレイピング失敗時のフォールバック
+                        libraryData.works[rjCode] = ensureThumbnail({
+                            rjCode,
+                            title: titleFromFile,
+                            circle: 'FANZA',
+                            authors: [],
+                            tags: ['FANZA', '未取得'],
+                            description: 'FANZAから情報を取得できませんでした。',
+                            thumbnailUrl: '',
+                            localPath: folderPath,
+                            fetchedAt: new Date().toISOString(),
+                        })
+                        result.success++
+                        result.newWorks.push(rjCode)
+                        result.errors.push(`${rjCode}: FANZAから情報を取得できませんでした（仮登録）`)
+                    }
+                } catch (error) {
+                    console.error(`[Library] FANZA scrape error for ${rjCode}:`, error)
+                    libraryData.works[rjCode] = ensureThumbnail({
+                        rjCode,
+                        title: titleFromFile,
+                        circle: 'FANZA',
+                        authors: [],
+                        tags: ['FANZA', 'エラー'],
+                        description: `エラーが発生しました: ${error instanceof Error ? error.message : String(error)}`,
+                        thumbnailUrl: '',
+                        localPath: folderPath,
+                        fetchedAt: new Date().toISOString(),
+                    })
+                    result.success++
+                    result.newWorks.push(rjCode)
+                    result.errors.push(`${rjCode}: FANZAスクレイピングエラー`)
+                }
+
+                // 1件ごとに保存と通知
+                saveLibraryData(libraryData)
+                webContents.getAllWebContents().forEach(wc => {
+                    wc.send('library:updated')
+                })
+
+                // レート制限対策のディレイ
+                if (i < newWorks.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, settings.requestDelay))
+                }
+                continue
+            }
+
+            // RJコードがある場合はDLsiteからスクレイピングを試行
             try {
                 if (onProgress) {
-                    onProgress(i + 1, newWorks.length, rjCode, 'スクレイピング中...')
+                    onProgress(i + 1, newWorks.length, rjCode, 'DLsiteから取得中...')
                 }
 
                 const workInfo = await scrapeWorkInfo(rjCode, folderPath)
